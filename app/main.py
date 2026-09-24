@@ -384,12 +384,12 @@ def dashboard(request: Request):
 # ---------------------------------------------------------------------------
 
 @app.get("/dashboard/chats", response_class=HTMLResponse)
-def lista_chats(request: Request, q: str = ""):
+def lista_chats(request: Request, q: str = "", estado: str = "todas"):
     email = _dashboard_email(request)
     if email is None:
         return RedirectResponse(url="/login", status_code=status.HTTP_303_SEE_OTHER)
     chats = conversaciones.listar(busqueda=q)
-    return render_lista_chats(chats, email=email, busqueda=q)
+    return render_lista_chats(chats, email=email, busqueda=q, estado=estado)
 
 
 @app.get("/dashboard/chats/{telefono}", response_class=HTMLResponse)
