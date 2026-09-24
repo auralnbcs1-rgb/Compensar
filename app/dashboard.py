@@ -283,8 +283,9 @@ def _avatar(telefono: str) -> str:
 
 
 def _sidebar(activo: str, email: str) -> str:
-    """Barra lateral de navegación — inspirada en el panel de Amanda (Chats / Reportes / Salir),
-    con lo que sí existe en Aurora: no hay 'Agendados' porque Aurora no agenda citas."""
+    """Barra lateral de navegación — inspirada en el panel de Amanda (Chats / Salir),
+    con lo que sí existe en Aurora: no hay 'Agendados' porque Aurora no agenda citas,
+    ni 'Reportes' (se quitó del nav)."""
     def item(href: str, etiqueta: str, clave: str) -> str:
         activo_cls = " sb-activo" if clave == activo else ""
         return f'<a class="sb-item{activo_cls}" href="{href}">{etiqueta}</a>'
@@ -294,7 +295,6 @@ def _sidebar(activo: str, email: str) -> str:
     <div class="sb-logo">A</div>
     <div class="sb-nav">
       {item("/dashboard/chats", "Chats", "chats")}
-      {item("/dashboard", "Reportes", "reportes")}
     </div>
     <a class="sb-item sb-salir" href="/logout" title="{html.escape(email)}">Salir</a>
   </nav>"""
