@@ -22,10 +22,15 @@ def subir_imagen(telefono: str, contenido: bytes, content_type: str) -> str:
 
 def url_firmada(storage_path: str, segundos: int = 3600) -> str:
     """URL temporal para mostrar la imagen en el dashboard — el bucket es privado, así
-    que no hay una URL pública fija."""
-    resp = get_client().storage.from_(settings.storage_bucket_documentos).create_signed_url(
-        storage_path, segundos
-    )
+    que no hay una URL pública fija. Si Supabase no logra firmarla (el archivo no está,
+    hubo un error de permisos, etc.) devuelve "" en vez de tumbar toda la conversación
+    con un error 500 — el chat se sigue viendo, solo sin esa imagen puntual."""
+    try:
+        resp = get_client().storage.from_(settings.storage_bucket_documentos).create_signed_url(
+            storage_path, segundos
+        )
+    except Exception:
+        return ""
     if isinstance(resp, dict):
         return resp.get("signedURL") or resp.get("signedUrl") or ""
     return getattr(resp, "signed_url", "") or ""

@@ -484,7 +484,11 @@ def _burbuja(m: Mensaje) -> str:
         quien = m.enviado_por or "Agente"
 
     if m.tipo == "imagen" and m.storage_path:
-        cuerpo = f'<img src="{url_firmada(m.storage_path)}" alt="Imagen del chat" style="max-width:220px; border-radius:8px; display:block;" />'
+        url = url_firmada(m.storage_path)
+        if url:
+            cuerpo = f'<img src="{url}" alt="Imagen del chat" style="max-width:220px; border-radius:8px; display:block;" />'
+        else:
+            cuerpo = f'<div style="font-style:italic; color:{GRAY};">No se pudo cargar esta imagen.</div>'
         if m.contenido:
             cuerpo += f'<div style="margin-top:4px;">{_con_negritas(html.escape(m.contenido))}</div>'
     else:
