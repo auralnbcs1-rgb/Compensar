@@ -300,7 +300,7 @@ def _sidebar(activo: str, email: str) -> str:
   </nav>"""
 
 
-def _fila_chat(conv: Conversacion) -> str:
+def _fila_chat(conv: Conversacion, lista: bool = False) -> str:
     titulo = html.escape(conv.nombre) if conv.nombre else conv.telefono
     subtitulo = f" · {conv.telefono}" if conv.nombre else ""
     extracto = html.escape(conv.ultimo_mensaje_extracto)
@@ -308,8 +308,11 @@ def _fila_chat(conv: Conversacion) -> str:
         badge = f'<span class="badge badge-pausada">Tú tienes el control{" · " + html.escape(conv.pausada_por) if conv.pausada_por else ""}</span>'
     else:
         badge = '<span class="badge badge-activa">● Aurora activa</span>'
+    if lista:
+        badge += '<span class="badge badge-lista">● Documentos completos</span>'
+    clase_lista = " fila-chat-lista" if lista else ""
     return f"""
-    <a class="fila-chat" href="/dashboard/chats/{conv.telefono}" target="chatframe">
+    <a class="fila-chat{clase_lista}" href="/dashboard/chats/{conv.telefono}" target="chatframe">
       <div class="fila-chat-avatar">{_avatar(conv.telefono)}</div>
       <div class="fila-chat-cuerpo">
         <div class="fila-chat-encabezado">
@@ -330,13 +333,21 @@ _PLACEHOLDER_IFRAME = (
 )
 
 
-def render_lista_chats(chats: list[Conversacion], email: str = "", busqueda: str = "", estado: str = "todas") -> str:
+def render_lista_chats(
+    chats: list[Conversacion],
+    email: str = "",
+    busqueda: str = "",
+    estado: str = "todas",
+    listos: frozenset[str] = frozenset(),
+) -> str:
     if estado == "activas":
         chats = [c for c in chats if not c.pausada]
     elif estado == "pausadas":
         chats = [c for c in chats if c.pausada]
+    elif estado == "listas":
+        chats = [c for c in chats if c.telefono in listos]
 
-    filas = "".join(_fila_chat(c) for c in chats)
+    filas = "".join(_fila_chat(c, lista=c.telefono in listos) for c in chats)
     if not filas:
         filas = '<p class="fila-azul-vacio">No hay conversaciones que coincidan.</p>'
 
@@ -401,6 +412,8 @@ def render_lista_chats(chats: list[Conversacion], email: str = "", busqueda: str
     margin-bottom: 4px; text-decoration: none; color: inherit;
   }}
   .fila-chat:hover {{ background: #F3F5F8; }}
+  .fila-chat-lista {{ background: #EAF1FB; }}
+  .fila-chat-lista:hover {{ background: #DEE9F9; }}
   .fila-chat-avatar {{
     flex: none; width: 38px; height: 38px; border-radius: 50%; background: {NAVY}; color: {SURFACE};
     display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700;
@@ -413,9 +426,10 @@ def render_lista_chats(chats: list[Conversacion], email: str = "", busqueda: str
   .fila-chat-extracto {{
     font-size: 12.5px; color: {GRAY}; margin: 2px 0 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   }}
-  .badge {{ display: inline-block; font-size: 10.5px; }}
+  .badge {{ display: inline-block; font-size: 10.5px; margin-right: 8px; }}
   .badge-activa {{ color: {GOOD}; }}
   .badge-pausada {{ color: {BEHIND}; }}
+  .badge-lista {{ color: {BLUE}; }}
   .fila-azul-vacio {{ font-size: 13px; color: {GRAY}; padding: 12px 8px; }}
 
   .detalle-col {{ flex: 1; min-width: 0; }}
@@ -435,6 +449,7 @@ def render_lista_chats(chats: list[Conversacion], email: str = "", busqueda: str
             {opcion("todas", "Todas")}
             {opcion("activas", "Aurora activa")}
             {opcion("pausadas", "Requieren atención")}
+            {opcion("listas", "Documentos completos")}
           </select>
         </form>
       </div>
@@ -574,7 +589,13 @@ def render_chat(conv: Conversacion, historial: list[Mensaje], email: str = "") -
     border-radius: 8px; font-size: 14px; font-family: inherit; resize: vertical; min-height: 44px;
   }}
   form.enviar .fila-envio {{ display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 8px; }}
-  form.enviar input[type=file] {{ font-size: 12px; color: {GRAY}; }}
+  .input-archivo-oculto {{ display: none; }}
+  .adjuntar {{
+    font-size: 19px; cursor: pointer; padding: 6px 9px; border-radius: 6px; flex: none; line-height: 1;
+    display: inline-flex; align-items: center; justify-content: center;
+  }}
+  .adjuntar:hover {{ background: #F3F5F8; }}
+  .nombre-archivo {{ font-size: 12px; color: {GRAY}; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }}
   form.enviar button[type=submit] {{
     padding: 9px 20px; background: {NAVY}; color: {SURFACE}; border: none; border-radius: 6px;
     font-size: 14px; cursor: pointer; flex: none;
@@ -612,7 +633,12 @@ def render_chat(conv: Conversacion, historial: list[Mensaje], email: str = "") -
     <form class="enviar" method="post" action="/dashboard/chats/{conv.telefono}/enviar" enctype="multipart/form-data">
       <textarea name="texto" placeholder="Escribe un mensaje…"></textarea>
       <div class="fila-envio">
-        <input type="file" name="imagen" accept="image/*" />
+        <label class="adjuntar" for="imagen-input" title="Adjuntar imagen">📎</label>
+        <input
+          type="file" id="imagen-input" name="imagen" accept="image/*" class="input-archivo-oculto"
+          onchange="document.getElementById('nombre-archivo').textContent = this.files[0] ? this.files[0].name : '';"
+        />
+        <span id="nombre-archivo" class="nombre-archivo"></span>
         <button type="submit">Enviar</button>
       </div>
       <p class="nota-envio">Al enviar, este chat queda a tu cargo — Aurora deja de contestar aquí hasta que le des a "Reactivar Aurora".</p>

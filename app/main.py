@@ -349,7 +349,7 @@ def login_submit(email: str = Form(...), password: str = Form(...)):
     if sesion is None:
         return HTMLResponse(render_login("Correo o clave incorrectos."), status_code=401)
 
-    respuesta = RedirectResponse(url="/dashboard", status_code=status.HTTP_303_SEE_OTHER)
+    respuesta = RedirectResponse(url="/dashboard/chats", status_code=status.HTTP_303_SEE_OTHER)
     respuesta.set_cookie(
         COOKIE_NAME,
         sesion.access_token,
@@ -370,6 +370,17 @@ def logout():
 
 @app.get("/dashboard", response_class=HTMLResponse)
 def dashboard(request: Request):
+    # Se entra directo a la bandeja de chats — el panel de reportes/estadísticas
+    # (render_dashboard) queda sin usarse en la navegación, pero la ruta original de
+    # abajo se deja disponible por si se necesita consultarla directo.
+    email = _dashboard_email(request)
+    if email is None:
+        return RedirectResponse(url="/login", status_code=status.HTTP_303_SEE_OTHER)
+    return RedirectResponse(url="/dashboard/chats", status_code=status.HTTP_303_SEE_OTHER)
+
+
+@app.get("/dashboard/reportes", response_class=HTMLResponse)
+def dashboard_reportes(request: Request):
     email = _dashboard_email(request)
     if email is None:
         return RedirectResponse(url="/login", status_code=status.HTTP_303_SEE_OTHER)
@@ -389,7 +400,10 @@ def lista_chats(request: Request, q: str = "", estado: str = "todas"):
     if email is None:
         return RedirectResponse(url="/login", status_code=status.HTTP_303_SEE_OTHER)
     chats = conversaciones.listar(busqueda=q)
-    return render_lista_chats(chats, email=email, busqueda=q, estado=estado)
+    # Franja azul: teléfonos con una solicitud en "documentos_completos" — Aurora ya
+    # tiene todo lo que necesita y el chat queda listo para que el agente lo tome.
+    listos = {s.telefono for s in solicitudes.listas_para_agente(limit=500)}
+    return render_lista_chats(chats, email=email, busqueda=q, estado=estado, listos=listos)
 
 
 @app.get("/dashboard/chats/{telefono}", response_class=HTMLResponse)
