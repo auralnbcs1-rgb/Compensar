@@ -71,6 +71,14 @@ async def receive_message(request: Request):
         return {"status": "ignored"}
 
     phone = entrante["phone"]
+    wa_message_id = entrante.get("wa_message_id", "")
+
+    if wa_message_id and conversaciones.ya_registrado(wa_message_id):
+        # Meta reintenta la entrega del webhook si no respondemos rápido (pasa sobre
+        # todo procesando imágenes) — sin este corte, procesaríamos el mismo mensaje
+        # dos veces: quedaría duplicado en el panel y Aurora le contestaría dos veces.
+        return {"status": "duplicado"}
+
     paciente = backlog.find_by_phone(phone)
     nombre_conocido = paciente.nombre if paciente else ""
 
@@ -82,9 +90,13 @@ async def receive_message(request: Request):
         media_url = get_media_url(entrante["media_id"])
         contenido_imagen = download_media(media_url)
         storage_path = chat_media.subir_imagen(phone, contenido_imagen[0], contenido_imagen[1])
-        conversaciones.registrar_entrante(phone, "imagen", storage_path=storage_path, nombre=nombre_conocido)
+        conversaciones.registrar_entrante(
+            phone, "imagen", storage_path=storage_path, nombre=nombre_conocido, wa_message_id=wa_message_id
+        )
     else:
-        conversaciones.registrar_entrante(phone, "texto", contenido=entrante["text"], nombre=nombre_conocido)
+        conversaciones.registrar_entrante(
+            phone, "texto", contenido=entrante["text"], nombre=nombre_conocido, wa_message_id=wa_message_id
+        )
 
     if conversaciones.esta_pausada(phone):
         # Un agente tomó el control de este chat desde el panel — Aurora no contesta
@@ -500,19 +512,20 @@ def _extract_message(body: dict) -> dict | None:
             return None
         msg = messages[0]
         phone = msg["from"]
+        wa_message_id = msg.get("id", "")
         tipo = msg.get("type", "text")
 
         if tipo == "image":
             media_id = msg.get("image", {}).get("id")
             if not media_id:
                 return None
-            return {"phone": phone, "type": "image", "media_id": media_id}
+            return {"phone": phone, "type": "image", "media_id": media_id, "wa_message_id": wa_message_id}
 
         if tipo == "text":
             text = msg.get("text", {}).get("body", "")
             if not text:
                 return None
-            return {"phone": phone, "type": "text", "text": text}
+            return {"phone": phone, "type": "text", "text": text, "wa_message_id": wa_message_id}
 
         return None
     except (KeyError, IndexError):

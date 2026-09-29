@@ -73,8 +73,31 @@ def _touch(telefono: str, extracto: str, nombre: str = "") -> None:
     get_client().table("conversaciones").upsert(payload).execute()
 
 
+def ya_registrado(wa_message_id: str) -> bool:
+    """True si ya guardamos un mensaje entrante con este ID de WhatsApp. Meta reintenta
+    la entrega del webhook si nuestra respuesta tarda más de unos segundos (pasa sobre
+    todo con imágenes, por la clasificación con Claude) — sin este chequeo, el mismo
+    mensaje del paciente queda registrado dos veces y Aurora le contesta dos veces."""
+    if not wa_message_id:
+        return False
+    resp = (
+        get_client()
+        .table("mensajes")
+        .select("id")
+        .eq("wa_message_id", wa_message_id)
+        .limit(1)
+        .execute()
+    )
+    return bool(resp.data)
+
+
 def registrar_entrante(
-    telefono: str, tipo: str, contenido: str = "", storage_path: Optional[str] = None, nombre: str = ""
+    telefono: str,
+    tipo: str,
+    contenido: str = "",
+    storage_path: Optional[str] = None,
+    nombre: str = "",
+    wa_message_id: str = "",
 ) -> None:
     # `mensajes.telefono` tiene llave foránea a `conversaciones.telefono` — hay que
     # asegurar la fila de conversaciones ANTES de insertar el mensaje, o falla en el
@@ -88,6 +111,7 @@ def registrar_entrante(
             "contenido": contenido,
             "storage_path": storage_path,
             "enviado_por": "paciente",
+            "wa_message_id": wa_message_id or None,
         }
     ).execute()
 
