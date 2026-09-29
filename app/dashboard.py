@@ -402,7 +402,7 @@ def render_lista_chats(chats: list[Conversacion], email: str = "", busqueda: str
   }}
   .fila-chat:hover {{ background: #F3F5F8; }}
   .fila-chat-avatar {{
-    flex: none; width: 38px; height: 38px; border-radius: 50%; background: {TEAL}; color: {SURFACE};
+    flex: none; width: 38px; height: 38px; border-radius: 50%; background: {NAVY}; color: {SURFACE};
     display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700;
   }}
   .fila-chat-cuerpo {{ min-width: 0; flex: 1; }}
@@ -413,9 +413,9 @@ def render_lista_chats(chats: list[Conversacion], email: str = "", busqueda: str
   .fila-chat-extracto {{
     font-size: 12.5px; color: {GRAY}; margin: 2px 0 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   }}
-  .badge {{ display: inline-block; font-size: 10.5px; padding: 2px 8px; border-radius: 999px; }}
-  .badge-activa {{ background: #E6F4EF; color: {GOOD}; }}
-  .badge-pausada {{ background: #FCEFEA; color: {BEHIND}; }}
+  .badge {{ display: inline-block; font-size: 10.5px; }}
+  .badge-activa {{ color: {GOOD}; }}
+  .badge-pausada {{ color: {BEHIND}; }}
   .fila-azul-vacio {{ font-size: 13px; color: {GRAY}; padding: 12px 8px; }}
 
   .detalle-col {{ flex: 1; min-width: 0; }}
@@ -448,6 +448,15 @@ def render_lista_chats(chats: list[Conversacion], email: str = "", busqueda: str
 </html>"""
 
 
+def _con_negritas(texto: str) -> str:
+    """Convierte el *negrita* estilo WhatsApp del texto (ya escapado) en <strong>, para
+    que las listas que arma Aurora (*Sede:*, *Fecha:*, etc.) se vean en negrita real en
+    el panel en vez de con asteriscos literales."""
+    import re
+
+    return re.sub(r"\*(?!\s)([^*\n]+?)(?<!\s)\*", r"<strong>\1</strong>", texto)
+
+
 def _burbuja(m: Mensaje) -> str:
     from app.chat_media import url_firmada  # import diferido: evita ciclos si algún día chat_media crece
 
@@ -462,9 +471,9 @@ def _burbuja(m: Mensaje) -> str:
     if m.tipo == "imagen" and m.storage_path:
         cuerpo = f'<img src="{url_firmada(m.storage_path)}" alt="Imagen del chat" style="max-width:220px; border-radius:8px; display:block;" />'
         if m.contenido:
-            cuerpo += f'<div style="margin-top:4px;">{html.escape(m.contenido)}</div>'
+            cuerpo += f'<div style="margin-top:4px;">{_con_negritas(html.escape(m.contenido))}</div>'
     else:
-        cuerpo = html.escape(m.contenido).replace("\n", "<br>")
+        cuerpo = _con_negritas(html.escape(m.contenido)).replace("\n", "<br>")
 
     lado = "burbuja-izq" if es_entrante else "burbuja-der"
     return f"""
@@ -480,16 +489,14 @@ def render_chat(conv: Conversacion, historial: list[Mensaje], email: str = "") -
     burbujas = "".join(_burbuja(m) for m in historial) or '<p class="fila-vacio">Todavía no hay mensajes.</p>'
 
     if conv.pausada:
-        estado_html = f"""
-      <span class="badge badge-pausada">Tú tienes el control{" · " + html.escape(conv.pausada_por) if conv.pausada_por else ""}</span>
+        boton_estado = f"""
       <form method="post" action="/dashboard/chats/{conv.telefono}/reanudar" style="display:inline;">
-        <button type="submit" class="boton-secundario">Reactivar Aurora</button>
+        <button type="submit" class="boton-primario">Reactivar Aurora</button>
       </form>"""
     else:
-        estado_html = f"""
-      <span class="badge badge-activa">● Aurora activa</span>
+        boton_estado = f"""
       <form method="post" action="/dashboard/chats/{conv.telefono}/pausar" style="display:inline;">
-        <button type="submit" class="boton-secundario">Pausar Aurora</button>
+        <button type="submit" class="boton-primario">Pausar Aurora</button>
       </form>"""
 
     return f"""<!doctype html>
@@ -509,44 +516,56 @@ def render_chat(conv: Conversacion, historial: list[Mensaje], email: str = "") -
   .marco {{ display: flex; flex-direction: column; height: 100vh; }}
 
   .cabecera {{
-    display: flex; align-items: flex-start; gap: 12px; padding: 16px 24px; border-bottom: 1px solid {MUTED_GRID};
+    display: flex; align-items: center; gap: 12px; padding: 16px 24px; border-bottom: 1px solid {MUTED_GRID};
     flex: none; flex-wrap: wrap; row-gap: 10px;
   }}
   .cabecera-avatar {{
-    width: 40px; height: 40px; border-radius: 50%; background: {TEAL}; color: {SURFACE};
+    width: 40px; height: 40px; border-radius: 50%; background: {NAVY}; color: {SURFACE};
     display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 700; flex: none;
   }}
   .cabecera-cuerpo {{ min-width: 220px; flex: 1; }}
-  .cabecera-nombre-fila {{ display: flex; align-items: baseline; gap: 8px; }}
-  .cabecera-nombre-fila h1 {{ font-size: 16px; margin: 0; }}
-  .cabecera-telefono {{ font-size: 12px; color: {GRAY}; }}
-  .form-nombre {{ margin-top: 6px; display: flex; align-items: center; }}
-  .form-nombre input {{
-    font-size: 12px; padding: 4px 9px; border: 1px solid {MUTED_GRID}; border-radius: 6px; width: 210px;
+  .cabecera-cuerpo h1 {{ font-size: 16px; margin: 0; }}
+  .cabecera-telefono {{ font-size: 12px; color: {GRAY}; margin-top: 1px; }}
+  .badge {{ display: inline-block; font-size: 11px; margin-top: 3px; }}
+  .badge-pausada {{ color: {BEHIND}; }}
+  .cabecera-acciones {{ display: flex; align-items: center; gap: 8px; flex: none; }}
+
+  .editar-caja {{ position: relative; }}
+  .editar-caja summary {{
+    font-size: 11px; padding: 6px 14px; border-radius: 999px; border: 1px solid {MUTED_GRID};
+    background: {SURFACE}; color: {NAVY}; cursor: pointer; white-space: nowrap; list-style: none;
   }}
-  .form-nombre button {{
-    font-size: 11px; padding: 4px 11px; border-radius: 6px; border: 1px solid {MUTED_GRID};
-    background: {SURFACE}; color: {TEAL}; cursor: pointer; margin-left: 6px;
+  .editar-caja summary::-webkit-details-marker {{ display: none; }}
+  .editar-caja summary:hover {{ background: #F3F5F8; }}
+  .editar-caja[open] summary {{ background: #F3F5F8; }}
+  .editar-panel {{
+    position: absolute; top: calc(100% + 6px); right: 0; background: {SURFACE};
+    border: 1px solid {MUTED_GRID}; border-radius: 10px; padding: 12px; box-shadow: 0 4px 16px rgba(4,30,66,0.12);
+    z-index: 10; width: 240px;
   }}
-  .form-nombre button:hover {{ background: #F0F7F7; }}
-  .estado {{ display: flex; align-items: center; gap: 8px; flex: none; }}
-  .badge {{ display: inline-block; font-size: 11px; padding: 3px 10px; border-radius: 999px; white-space: nowrap; }}
-  .badge-activa {{ background: #E6F4EF; color: {GOOD}; }}
-  .badge-pausada {{ background: #FCEFEA; color: {BEHIND}; }}
-  .boton-secundario {{
-    font-size: 11px; padding: 4px 12px; border-radius: 999px; border: 1px solid {MUTED_GRID};
-    background: {SURFACE}; color: {NAVY}; cursor: pointer; white-space: nowrap;
+  .editar-panel label {{ font-size: 11px; color: {GRAY}; display: block; margin-bottom: 5px; }}
+  .editar-panel input {{
+    width: 100%; font-size: 13px; padding: 7px 10px; border: 1px solid {MUTED_GRID}; border-radius: 6px;
   }}
-  .boton-secundario:hover {{ background: #F3F5F8; }}
+  .editar-panel button {{
+    margin-top: 8px; width: 100%; font-size: 12px; padding: 7px 0; border-radius: 6px; border: none;
+    background: {NAVY}; color: {SURFACE}; cursor: pointer;
+  }}
+  .editar-panel button:hover {{ background: #0A2E56; }}
+
+  .boton-primario {{
+    font-size: 12px; padding: 7px 16px; border-radius: 6px; border: none;
+    background: {NAVY}; color: {SURFACE}; cursor: pointer; white-space: nowrap;
+  }}
+  .boton-primario:hover {{ background: #0A2E56; }}
 
   .hilo-scroll {{ flex: 1; overflow-y: auto; padding: 20px 24px; background: #FAFBFC; }}
   .hilo {{ display: flex; flex-direction: column; gap: 10px; max-width: 640px; margin: 0 auto; }}
   .burbuja {{ max-width: 78%; border-radius: 12px; padding: 9px 13px; font-size: 13.5px; box-shadow: 0 1px 1px rgba(4,30,66,0.05); }}
   .burbuja-izq {{ align-self: flex-start; background: {SURFACE}; border: 1px solid {MUTED_GRID}; }}
-  .burbuja-der {{ align-self: flex-end; background: {TEAL}; color: {SURFACE}; border: 1px solid {TEAL}; }}
-  .burbuja-der .burbuja-quien {{ color: rgba(255,255,255,0.78); }}
+  .burbuja-der {{ align-self: flex-end; background: #EEF3FC; border: 1px solid #D7E3F7; }}
   .burbuja-quien {{ font-size: 10px; color: {GRAY}; margin-bottom: 3px; }}
-  .burbuja-cuerpo {{ white-space: pre-wrap; }}
+  .burbuja-cuerpo {{ color: {NAVY}; white-space: pre-wrap; }}
   .fila-vacio {{ font-size: 13px; color: {GRAY}; text-align: center; margin-top: 60px; }}
 
   form.enviar {{ flex: none; background: {SURFACE}; border-top: 1px solid {MUTED_GRID}; padding: 14px 24px; }}
@@ -569,16 +588,23 @@ def render_chat(conv: Conversacion, historial: list[Mensaje], email: str = "") -
     <div class="cabecera">
       <div class="cabecera-avatar">{_avatar(conv.telefono)}</div>
       <div class="cabecera-cuerpo">
-        <div class="cabecera-nombre-fila">
-          <h1>{titulo}</h1>
-          {f'<span class="cabecera-telefono">{conv.telefono}</span>' if conv.nombre else ""}
-        </div>
-        <form class="form-nombre" method="post" action="/dashboard/chats/{conv.telefono}/nombre">
-          <input type="text" name="nombre" value="{nombre_valor}" placeholder="Añadir nombre del paciente…" />
-          <button type="submit">Guardar</button>
-        </form>
+        <h1>{titulo}</h1>
+        {f'<div class="cabecera-telefono">{conv.telefono}</div>' if conv.nombre else ""}
+        {f'<div class="badge badge-pausada">Tú tienes el control{" · " + html.escape(conv.pausada_por) if conv.pausada_por else ""}</div>' if conv.pausada else ""}
       </div>
-      <div class="estado">{estado_html}</div>
+      <div class="cabecera-acciones">
+        <details class="editar-caja">
+          <summary>Editar</summary>
+          <div class="editar-panel">
+            <form method="post" action="/dashboard/chats/{conv.telefono}/nombre">
+              <label for="nombre">Nombre del paciente</label>
+              <input type="text" id="nombre" name="nombre" value="{nombre_valor}" placeholder="Añadir nombre…" />
+              <button type="submit">Guardar</button>
+            </form>
+          </div>
+        </details>
+        {boton_estado}
+      </div>
     </div>
 
     <div class="hilo-scroll"><div class="hilo">{burbujas}</div></div>
