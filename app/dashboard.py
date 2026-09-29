@@ -476,7 +476,8 @@ def _burbuja(m: Mensaje) -> str:
 
 def render_chat(conv: Conversacion, historial: list[Mensaje], email: str = "") -> str:
     titulo = html.escape(conv.nombre) if conv.nombre else conv.telefono
-    burbujas = "".join(_burbuja(m) for m in historial) or '<p class="fila-azul-vacio">Todavía no hay mensajes.</p>'
+    nombre_valor = html.escape(conv.nombre) if conv.nombre else ""
+    burbujas = "".join(_burbuja(m) for m in historial) or '<p class="fila-vacio">Todavía no hay mensajes.</p>'
 
     if conv.pausada:
         estado_html = f"""
@@ -485,7 +486,11 @@ def render_chat(conv: Conversacion, historial: list[Mensaje], email: str = "") -
         <button type="submit" class="boton-secundario">Reactivar Aurora</button>
       </form>"""
     else:
-        estado_html = '<span class="badge badge-activa">Aurora activa</span>'
+        estado_html = f"""
+      <span class="badge badge-activa">● Aurora activa</span>
+      <form method="post" action="/dashboard/chats/{conv.telefono}/pausar" style="display:inline;">
+        <button type="submit" class="boton-secundario">Pausar Aurora</button>
+      </form>"""
 
     return f"""<!doctype html>
 <html lang="es">
@@ -495,55 +500,97 @@ def render_chat(conv: Conversacion, historial: list[Mensaje], email: str = "") -
 <title>{titulo} — Aurora (Compensar)</title>
 <style>
   :root {{ color-scheme: light; }}
+  * {{ box-sizing: border-box; }}
+  html, body {{ height: 100%; }}
   body {{
-    margin: 0; padding: 32px 24px 64px; background: {SURFACE}; max-width: 640px;
+    margin: 0; background: {SURFACE};
     font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; color: {NAVY};
   }}
-  h1 {{ font-size: 20px; margin: 0 0 6px; }}
-  .badge {{ display: inline-block; font-size: 11px; padding: 2px 8px; border-radius: 999px; margin-right: 8px; }}
+  .marco {{ display: flex; flex-direction: column; height: 100vh; }}
+
+  .cabecera {{
+    display: flex; align-items: flex-start; gap: 12px; padding: 16px 24px; border-bottom: 1px solid {MUTED_GRID};
+    flex: none; flex-wrap: wrap; row-gap: 10px;
+  }}
+  .cabecera-avatar {{
+    width: 40px; height: 40px; border-radius: 50%; background: {TEAL}; color: {SURFACE};
+    display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 700; flex: none;
+  }}
+  .cabecera-cuerpo {{ min-width: 220px; flex: 1; }}
+  .cabecera-nombre-fila {{ display: flex; align-items: baseline; gap: 8px; }}
+  .cabecera-nombre-fila h1 {{ font-size: 16px; margin: 0; }}
+  .cabecera-telefono {{ font-size: 12px; color: {GRAY}; }}
+  .form-nombre {{ margin-top: 6px; display: flex; align-items: center; }}
+  .form-nombre input {{
+    font-size: 12px; padding: 4px 9px; border: 1px solid {MUTED_GRID}; border-radius: 6px; width: 210px;
+  }}
+  .form-nombre button {{
+    font-size: 11px; padding: 4px 11px; border-radius: 6px; border: 1px solid {MUTED_GRID};
+    background: {SURFACE}; color: {TEAL}; cursor: pointer; margin-left: 6px;
+  }}
+  .form-nombre button:hover {{ background: #F0F7F7; }}
+  .estado {{ display: flex; align-items: center; gap: 8px; flex: none; }}
+  .badge {{ display: inline-block; font-size: 11px; padding: 3px 10px; border-radius: 999px; white-space: nowrap; }}
   .badge-activa {{ background: #E6F4EF; color: {GOOD}; }}
   .badge-pausada {{ background: #FCEFEA; color: {BEHIND}; }}
   .boton-secundario {{
-    font-size: 11px; padding: 3px 10px; border-radius: 999px; border: 1px solid {MUTED_GRID};
-    background: {SURFACE}; color: {NAVY}; cursor: pointer;
+    font-size: 11px; padding: 4px 12px; border-radius: 999px; border: 1px solid {MUTED_GRID};
+    background: {SURFACE}; color: {NAVY}; cursor: pointer; white-space: nowrap;
   }}
-  .estado {{ margin: 10px 0 20px; }}
-  .hilo {{ display: flex; flex-direction: column; gap: 10px; margin-bottom: 24px; }}
-  .burbuja {{ max-width: 78%; border-radius: 10px; padding: 8px 12px; font-size: 13px; }}
+  .boton-secundario:hover {{ background: #F3F5F8; }}
+
+  .hilo-scroll {{ flex: 1; overflow-y: auto; padding: 20px 24px; background: #FAFBFC; }}
+  .hilo {{ display: flex; flex-direction: column; gap: 10px; max-width: 640px; margin: 0 auto; }}
+  .burbuja {{ max-width: 78%; border-radius: 12px; padding: 9px 13px; font-size: 13.5px; box-shadow: 0 1px 1px rgba(4,30,66,0.05); }}
   .burbuja-izq {{ align-self: flex-start; background: {SURFACE}; border: 1px solid {MUTED_GRID}; }}
-  .burbuja-der {{ align-self: flex-end; background: #EEF3FC; border: 1px solid #D7E3F7; }}
+  .burbuja-der {{ align-self: flex-end; background: {TEAL}; color: {SURFACE}; border: 1px solid {TEAL}; }}
+  .burbuja-der .burbuja-quien {{ color: rgba(255,255,255,0.78); }}
   .burbuja-quien {{ font-size: 10px; color: {GRAY}; margin-bottom: 3px; }}
-  .burbuja-cuerpo {{ color: {NAVY}; white-space: pre-wrap; }}
-  form.enviar {{
-    position: sticky; bottom: 0; background: {SURFACE}; border-top: 1px solid {MUTED_GRID};
-    padding-top: 12px;
-  }}
+  .burbuja-cuerpo {{ white-space: pre-wrap; }}
+  .fila-vacio {{ font-size: 13px; color: {GRAY}; text-align: center; margin-top: 60px; }}
+
+  form.enviar {{ flex: none; background: {SURFACE}; border-top: 1px solid {MUTED_GRID}; padding: 14px 24px; }}
   form.enviar textarea {{
-    width: 100%; box-sizing: border-box; padding: 9px 12px; border: 1px solid {MUTED_GRID};
+    width: 100%; box-sizing: border-box; padding: 10px 13px; border: 1px solid {MUTED_GRID};
     border-radius: 8px; font-size: 14px; font-family: inherit; resize: vertical; min-height: 44px;
   }}
-  form.enviar .fila-envio {{ display: flex; align-items: center; gap: 10px; margin-top: 8px; }}
-  form.enviar button {{
-    padding: 9px 18px; background: {NAVY}; color: {SURFACE}; border: none; border-radius: 6px;
-    font-size: 14px; cursor: pointer;
+  form.enviar .fila-envio {{ display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 8px; }}
+  form.enviar input[type=file] {{ font-size: 12px; color: {GRAY}; }}
+  form.enviar button[type=submit] {{
+    padding: 9px 20px; background: {NAVY}; color: {SURFACE}; border: none; border-radius: 6px;
+    font-size: 14px; cursor: pointer; flex: none;
   }}
+  form.enviar button[type=submit]:hover {{ background: #0A2E56; }}
   .nota-envio {{ font-size: 11px; color: {GRAY}; margin-top: 6px; }}
 </style>
 </head>
 <body>
-  <a href="/dashboard/chats" style="color:{GRAY}; font-size:12px;">← Conversaciones</a>
-  <h1>{titulo}{f' <span style="font-weight:400; color:{GRAY}; font-size:14px;">· {conv.telefono}</span>' if conv.nombre else ""}</h1>
-  <div class="estado">{estado_html}</div>
-
-  <div class="hilo">{burbujas}</div>
-
-  <form class="enviar" method="post" action="/dashboard/chats/{conv.telefono}/enviar" enctype="multipart/form-data">
-    <textarea name="texto" placeholder="Escribe un mensaje…"></textarea>
-    <div class="fila-envio">
-      <input type="file" name="imagen" accept="image/*" />
-      <button type="submit">Enviar</button>
+  <div class="marco">
+    <div class="cabecera">
+      <div class="cabecera-avatar">{_avatar(conv.telefono)}</div>
+      <div class="cabecera-cuerpo">
+        <div class="cabecera-nombre-fila">
+          <h1>{titulo}</h1>
+          {f'<span class="cabecera-telefono">{conv.telefono}</span>' if conv.nombre else ""}
+        </div>
+        <form class="form-nombre" method="post" action="/dashboard/chats/{conv.telefono}/nombre">
+          <input type="text" name="nombre" value="{nombre_valor}" placeholder="Añadir nombre del paciente…" />
+          <button type="submit">Guardar</button>
+        </form>
+      </div>
+      <div class="estado">{estado_html}</div>
     </div>
-    <p class="nota-envio">Al enviar, este chat queda a tu cargo — Aurora deja de contestar aquí hasta que le des a "Reactivar Aurora".</p>
-  </form>
+
+    <div class="hilo-scroll"><div class="hilo">{burbujas}</div></div>
+
+    <form class="enviar" method="post" action="/dashboard/chats/{conv.telefono}/enviar" enctype="multipart/form-data">
+      <textarea name="texto" placeholder="Escribe un mensaje…"></textarea>
+      <div class="fila-envio">
+        <input type="file" name="imagen" accept="image/*" />
+        <button type="submit">Enviar</button>
+      </div>
+      <p class="nota-envio">Al enviar, este chat queda a tu cargo — Aurora deja de contestar aquí hasta que le des a "Reactivar Aurora".</p>
+    </form>
+  </div>
 </body>
 </html>"""

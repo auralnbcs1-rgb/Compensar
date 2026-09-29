@@ -442,6 +442,27 @@ def reanudar_aurora(telefono: str, request: Request):
     return RedirectResponse(url=f"/dashboard/chats/{telefono}", status_code=status.HTTP_303_SEE_OTHER)
 
 
+@app.post("/dashboard/chats/{telefono}/pausar")
+def pausar_aurora(telefono: str, request: Request):
+    """Pausa a Aurora en este chat sin necesidad de mandar un mensaje primero — para
+    cuando el agente solo quiere tomar el control (por ejemplo, para llamar al paciente
+    o coordinar algo por fuera de WhatsApp) sin que Aurora conteste mientras tanto."""
+    email = _dashboard_email(request)
+    if email is None:
+        return RedirectResponse(url="/login", status_code=status.HTTP_303_SEE_OTHER)
+    conversaciones.pausar(telefono, email)
+    return RedirectResponse(url=f"/dashboard/chats/{telefono}", status_code=status.HTTP_303_SEE_OTHER)
+
+
+@app.post("/dashboard/chats/{telefono}/nombre")
+def actualizar_nombre_chat(telefono: str, request: Request, nombre: str = Form("")):
+    email = _dashboard_email(request)
+    if email is None:
+        return RedirectResponse(url="/login", status_code=status.HTTP_303_SEE_OTHER)
+    conversaciones.actualizar_nombre(telefono, nombre.strip())
+    return RedirectResponse(url=f"/dashboard/chats/{telefono}", status_code=status.HTTP_303_SEE_OTHER)
+
+
 # ---------------------------------------------------------------------------
 # Utilidades del webhook
 # ---------------------------------------------------------------------------

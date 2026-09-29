@@ -152,3 +152,10 @@ def reanudar(telefono: str) -> None:
 def esta_pausada(telefono: str) -> bool:
     conv = obtener(telefono)
     return conv.pausada if conv else False
+
+
+def actualizar_nombre(telefono: str, nombre: str) -> None:
+    """El agente le pone (o corrige) el nombre a una conversación desde el panel —
+    útil cuando el paciente escribe antes de que su solicitud quede asociada a un
+    nombre conocido, o cuando llegó por un canal donde no lo dio."""
+    get_client().table("conversaciones").update({"nombre": nombre or None}).eq("telefono", telefono).execute()
