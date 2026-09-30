@@ -509,7 +509,13 @@ def _burbuja(m: Mensaje) -> str:
         if m.storage_path:
             url = url_firmada(m.storage_path)
             cuerpo = (
-                f'<img src="{url}" alt="Imagen del chat" style="max-width:220px; border-radius:8px; display:block;" />'
+                # target="_blank" abre la foto en tamaño completo en una pestaña nueva —
+                # así el agente la puede ver grande (y hacer zoom con lo que traiga el
+                # navegador) en vez de quedarse con la miniatura de 220px del chat.
+                f'<a href="{url}" target="_blank" rel="noopener">'
+                f'<img src="{url}" alt="Imagen del chat — clic para verla más grande" '
+                f'style="max-width:220px; border-radius:8px; display:block; cursor:zoom-in;" />'
+                f'</a>'
                 if url
                 else f'<div style="font-style:italic; color:{GRAY};">No se pudo cargar esta imagen.</div>'
             )
