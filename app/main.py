@@ -496,16 +496,16 @@ def actualizar_nombre_chat(telefono: str, request: Request, nombre: str = Form("
 
 
 @app.post("/dashboard/chats/{telefono}/atender")
-def marcar_atendida_chat(telefono: str, request: Request):
+def marcar_atendida_chat(telefono: str, request: Request, observaciones: str = Form("")):
     """Un agente confirma que ya atendió (respondió, agendó, o resolvió) el caso que
     Aurora había marcado como 'requiere_humano' para este número — queda registrado
-    quién lo hizo y el chat deja de aparecer en naranja."""
+    quién lo hizo, qué hizo (observaciones), y el chat deja de aparecer en naranja."""
     email = _dashboard_email(request)
     if email is None:
         return RedirectResponse(url="/login", status_code=status.HTTP_303_SEE_OTHER)
     solicitud = solicitudes.abierta_por_telefono(telefono)
     if solicitud is not None and solicitud.estado == "requiere_humano":
-        solicitudes.marcar_atendida(solicitud.id, email)
+        solicitudes.marcar_atendida(solicitud.id, email, observaciones)
     return RedirectResponse(url=f"/dashboard/chats/{telefono}", status_code=status.HTTP_303_SEE_OTHER)
 
 

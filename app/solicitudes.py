@@ -47,6 +47,7 @@ class Solicitud:
     telefono_2: str = ""
     correo: str = ""
     atendido_por: str = ""
+    observaciones: str = ""
 
 
 def _row_to_solicitud(row: dict) -> Solicitud:
@@ -64,6 +65,7 @@ def _row_to_solicitud(row: dict) -> Solicitud:
         telefono_2=row.get("telefono_2") or "",
         correo=row.get("correo") or "",
         atendido_por=row.get("atendido_por") or "",
+        observaciones=row.get("observaciones") or "",
     )
 
 
@@ -169,14 +171,15 @@ def requieren_asesor(limit: int = 50) -> list[Solicitud]:
     return [_row_to_solicitud(row) for row in resp.data]
 
 
-def marcar_atendida(solicitud_id: int, agente_email: str) -> None:
+def marcar_atendida(solicitud_id: int, agente_email: str, observaciones: str = "") -> None:
     """Un agente confirma que ya atendió (respondió, agendó, o resolvió por su cuenta)
     a un paciente que Aurora había marcado como 'requiere_humano' — cierra el caso y
-    deja registrado quién lo hizo, para que se vea en el panel."""
+    deja registrado quién lo hizo y qué hizo, para que se vea en el panel."""
     get_client().table("solicitudes").update(
         {
             "estado": "atendida",
             "atendido_por": agente_email,
+            "observaciones": observaciones.strip() or None,
             "actualizado_en": datetime.now(timezone.utc).isoformat(),
         }
     ).eq("id", solicitud_id).execute()

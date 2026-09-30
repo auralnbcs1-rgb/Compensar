@@ -541,14 +541,17 @@ def render_chat(
     if solicitud is not None and solicitud.estado == "requiere_humano":
         aviso_asesor = f"""
     <div class="aviso-naranja">
-      <span>🟠 Este paciente pidió (o necesita) un asesor.</span>
-      <form method="post" action="/dashboard/chats/{conv.telefono}/atender" style="display:inline;">
+      <div class="aviso-naranja-titulo">🟠 Este paciente pidió (o necesita) un asesor.</div>
+      <form method="post" action="/dashboard/chats/{conv.telefono}/atender">
+        <label for="observaciones">Observaciones (qué hiciste: agendaste, resolviste la duda, etc.)</label>
+        <textarea id="observaciones" name="observaciones" placeholder="Ej: Llamé al paciente y agendé para el 5 de octubre en sede Usaquén…"></textarea>
         <button type="submit" class="boton-naranja">Marcar como atendida</button>
       </form>
     </div>"""
     elif solicitud is not None and solicitud.estado == "atendida" and solicitud.atendido_por:
+        nota = f' — {html.escape(solicitud.observaciones)}' if solicitud.observaciones else ""
         aviso_asesor = f"""
-    <div class="aviso-atendida">✅ Atendida por {html.escape(solicitud.atendido_por)}</div>"""
+    <div class="aviso-atendida">✅ Atendida por {html.escape(solicitud.atendido_por)}{nota}</div>"""
 
     return f"""<!doctype html>
 <html lang="es">
@@ -611,9 +614,15 @@ def render_chat(
   .boton-primario:hover {{ background: #0A2E56; }}
 
   .aviso-naranja {{
-    margin: 14px 24px 0; padding: 10px 14px; background: #FBEBDC; border: 1px solid {ORANGE};
-    border-radius: 8px; display: flex; align-items: center; justify-content: space-between;
-    gap: 10px; font-size: 12.5px; color: {NAVY}; flex-wrap: wrap; row-gap: 8px;
+    margin: 14px 24px 0; padding: 12px 14px; background: #FBEBDC; border: 1px solid {ORANGE};
+    border-radius: 8px; font-size: 12.5px; color: {NAVY};
+  }}
+  .aviso-naranja-titulo {{ font-weight: 600; margin-bottom: 8px; }}
+  .aviso-naranja label {{ display: block; font-size: 11.5px; color: {GRAY}; margin-bottom: 4px; }}
+  .aviso-naranja textarea {{
+    width: 100%; box-sizing: border-box; padding: 8px 10px; border: 1px solid {MUTED_GRID};
+    border-radius: 6px; font-size: 13px; font-family: inherit; resize: vertical; min-height: 44px;
+    margin-bottom: 8px;
   }}
   .boton-naranja {{
     font-size: 12px; padding: 6px 14px; border-radius: 6px; border: none;
