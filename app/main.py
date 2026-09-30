@@ -22,6 +22,7 @@ Endpoints:
 - POST /dashboard/chats/{telefono}/enviar   → un agente manda texto y/o una imagen (pausa a Aurora ahí)
 - POST /dashboard/chats/{telefono}/reanudar → un agente le devuelve el control a Aurora en ese chat
 - POST /dashboard/chats/{telefono}/observaciones → un agente guarda una nota del chat (y cierra el caso si aplica)
+- POST /dashboard/chats/{telefono}/gestionado     → un agente quita el color (naranja/azul) del chat con un solo clic
 
 Ejecutar en desarrollo:
     uvicorn app.main:app --reload --port 8000
@@ -530,6 +531,24 @@ def guardar_observaciones_chat(telefono: str, request: Request, observaciones: s
     if solicitud is not None and solicitud.estado in solicitudes.GESTION_DESTINO:
         estado_final = solicitudes.GESTION_DESTINO[solicitud.estado]
         solicitudes.marcar_gestionada(solicitud.id, email, estado_final, observaciones)
+    return RedirectResponse(url=f"/dashboard/chats/{telefono}", status_code=status.HTTP_303_SEE_OTHER)
+
+
+@app.post("/dashboard/chats/{telefono}/gestionado")
+def marcar_chat_gestionado(telefono: str, request: Request):
+    """Botón "Gestionado" — un clic, sin escribir nada, para quitarle el color
+    (naranja/azul) a un chat. Hace lo mismo que guardar Observaciones sin texto nuevo:
+    conserva las notas que ya hubiera y cierra la solicitud (atendida/agendada) según
+    de qué color venía. Si el chat no tiene ningún color activo, no hace nada."""
+    email = _dashboard_email(request)
+    if email is None:
+        return RedirectResponse(url="/login", status_code=status.HTTP_303_SEE_OTHER)
+    solicitud = solicitudes.ultima_por_telefono(telefono)
+    if solicitud is not None and solicitud.estado in solicitudes.GESTION_DESTINO:
+        estado_final = solicitudes.GESTION_DESTINO[solicitud.estado]
+        conv = conversaciones.obtener(telefono)
+        observaciones_actuales = conv.notas if conv else ""
+        solicitudes.marcar_gestionada(solicitud.id, email, estado_final, observaciones_actuales)
     return RedirectResponse(url=f"/dashboard/chats/{telefono}", status_code=status.HTTP_303_SEE_OTHER)
 
 

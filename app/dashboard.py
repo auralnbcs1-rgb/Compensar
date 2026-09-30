@@ -14,7 +14,7 @@ from datetime import date, datetime
 from typing import Optional
 
 from app.conversaciones import Conversacion, Mensaje
-from app.solicitudes import Solicitud
+from app.solicitudes import GESTION_DESTINO, Solicitud
 from app.stats import DashboardStats
 
 NAVY = "#041E42"
@@ -583,6 +583,17 @@ def render_chat(
           </div>
         </details>"""
 
+    # Gestionado: botón rápido de un solo clic, aparte del dropdown de Observaciones —
+    # solo se ve cuando el chat tiene un color activo (naranja/azul) y sirve para
+    # quitárselo sin tener que escribir nada. Guarda igual las observaciones que ya
+    # hubiera, no las borra.
+    boton_gestionado = ""
+    if solicitud is not None and solicitud.estado in GESTION_DESTINO:
+        boton_gestionado = f"""
+        <form method="post" action="/dashboard/chats/{conv.telefono}/gestionado" style="display:inline;">
+          <button type="submit" class="boton-gestionado" title="Quita el color de este chat — marca el caso como ya gestionado">Gestionado</button>
+        </form>"""
+
     return f"""<!doctype html>
 <html lang="es">
 <head>
@@ -642,6 +653,12 @@ def render_chat(
     background: {NAVY}; color: {SURFACE}; cursor: pointer; white-space: nowrap;
   }}
   .boton-primario:hover {{ background: #0A2E56; }}
+
+  .boton-gestionado {{
+    font-size: 12px; padding: 7px 16px; border-radius: 6px; border: 1px solid {GOOD};
+    background: {SURFACE}; color: {GOOD}; cursor: pointer; white-space: nowrap; font-weight: 600;
+  }}
+  .boton-gestionado:hover {{ background: #EAF7F0; }}
 
   .badge-naranja-chat, .badge-azul-chat, .badge-hecho {{
     display: inline-block; font-size: 11px; margin-top: 3px; font-weight: 600;
@@ -709,6 +726,7 @@ def render_chat(
           </div>
         </details>
         {gestion_dropdown}
+        {boton_gestionado}
         {boton_estado}
       </div>
     </div>
