@@ -26,6 +26,7 @@ Endpoints:
 Ejecutar en desarrollo:
     uvicorn app.main:app --reload --port 8000
 """
+import logging
 import re
 
 from fastapi import FastAPI, File, Form, Request, Response, UploadFile, status
@@ -43,6 +44,7 @@ from app.vision_client import clasificar
 from app.whatsapp_client import download_media, get_media_url, send_image, send_text, upload_media
 
 app = FastAPI(title="Aurora - Compensar / Widex Colombia S.A.S.")
+logger = logging.getLogger("dashboard")
 
 
 @app.middleware("http")
@@ -434,6 +436,10 @@ def lista_chats(request: Request, q: str = "", estado: str = "todas"):
     # resolver algo (o el paciente pidió un asesor) y el chat necesita que un agente lo
     # atienda directamente.
     naranjas = {s.telefono for s in solicitudes.requieren_asesor(limit=500)}
+    logger.warning(
+        "lista_chats: estado=%r chats=%d listos=%r naranjas=%r",
+        estado, len(chats), listos, naranjas,
+    )
     return render_lista_chats(chats, email=email, busqueda=q, estado=estado, listos=listos, naranjas=naranjas)
 
 
