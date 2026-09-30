@@ -158,7 +158,7 @@ def listas_para_agente(limit: int = 50) -> list[Solicitud]:
 def requieren_asesor(limit: int = 50) -> list[Solicitud]:
     """Solicitudes que Aurora marcó como 'requiere_humano' — la franja naranja: el
     paciente pidió (o necesita) que un asesor lo atienda directamente. Deja de
-    aparecer aquí en cuanto un agente la marca como atendida con `marcar_atendida`."""
+    aparecer aquí en cuanto un agente la marca como atendida con `marcar_gestionada`."""
     resp = (
         get_client()
         .table("solicitudes")
@@ -171,13 +171,23 @@ def requieren_asesor(limit: int = 50) -> list[Solicitud]:
     return [_row_to_solicitud(row) for row in resp.data]
 
 
-def marcar_atendida(solicitud_id: int, agente_email: str, observaciones: str = "") -> None:
-    """Un agente confirma que ya atendió (respondió, agendó, o resolvió por su cuenta)
-    a un paciente que Aurora había marcado como 'requiere_humano' — cierra el caso y
-    deja registrado quién lo hizo y qué hizo, para que se vea en el panel."""
+# De qué estado sale cada botón del panel, y a cuál lo deja — 'requiere_humano' (franja
+# naranja) lo cierra un agente que ya atendió al paciente; 'documentos_completos'
+# (franja azul) lo cierra un agente que ya agendó la cita. Cualquier otro estado no
+# tiene botón de gestión en el panel.
+GESTION_DESTINO = {
+    "requiere_humano": "atendida",
+    "documentos_completos": "agendada",
+}
+
+
+def marcar_gestionada(solicitud_id: int, agente_email: str, estado_final: str, observaciones: str = "") -> None:
+    """Un agente confirma que ya gestionó este caso — lo atendió (venía de
+    'requiere_humano') o lo agendó (venía de 'documentos_completos') — y deja
+    registrado quién lo hizo y qué hizo (observaciones), para que se vea en el panel."""
     get_client().table("solicitudes").update(
         {
-            "estado": "atendida",
+            "estado": estado_final,
             "atendido_por": agente_email,
             "observaciones": observaciones.strip() or None,
             "actualizado_en": datetime.now(timezone.utc).isoformat(),

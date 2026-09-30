@@ -545,13 +545,26 @@ def render_chat(
       <form method="post" action="/dashboard/chats/{conv.telefono}/atender">
         <label for="observaciones">Observaciones (qué hiciste: agendaste, resolviste la duda, etc.)</label>
         <textarea id="observaciones" name="observaciones" placeholder="Ej: Llamé al paciente y agendé para el 5 de octubre en sede Usaquén…"></textarea>
+        <input type="hidden" name="resultado" value="atendida" />
         <button type="submit" class="boton-naranja">Marcar como atendida</button>
       </form>
     </div>"""
-    elif solicitud is not None and solicitud.estado == "atendida" and solicitud.atendido_por:
+    elif solicitud is not None and solicitud.estado == "documentos_completos":
+        aviso_asesor = f"""
+    <div class="aviso-azul">
+      <div class="aviso-azul-titulo">🔵 Este paciente ya tiene todos los documentos — falta agendar.</div>
+      <form method="post" action="/dashboard/chats/{conv.telefono}/atender">
+        <label for="observaciones">Observaciones (fecha y sede de la cita, o qué se acordó)</label>
+        <textarea id="observaciones" name="observaciones" placeholder="Ej: Agendé para el 5 de octubre, 9am, sede Usaquén…"></textarea>
+        <input type="hidden" name="resultado" value="agendada" />
+        <button type="submit" class="boton-azul">Marcar como agendada</button>
+      </form>
+    </div>"""
+    elif solicitud is not None and solicitud.estado in ("atendida", "agendada") and solicitud.atendido_por:
+        etiqueta = "Atendida" if solicitud.estado == "atendida" else "Agendada"
         nota = f' — {html.escape(solicitud.observaciones)}' if solicitud.observaciones else ""
         aviso_asesor = f"""
-    <div class="aviso-atendida">✅ Atendida por {html.escape(solicitud.atendido_por)}{nota}</div>"""
+    <div class="aviso-atendida">✅ {etiqueta} por {html.escape(solicitud.atendido_por)}{nota}</div>"""
 
     return f"""<!doctype html>
 <html lang="es">
@@ -629,6 +642,22 @@ def render_chat(
     background: {ORANGE}; color: {SURFACE}; cursor: pointer; white-space: nowrap;
   }}
   .boton-naranja:hover {{ background: #944909; }}
+  .aviso-azul {{
+    margin: 14px 24px 0; padding: 12px 14px; background: #EAF1FB; border: 1px solid {BLUE};
+    border-radius: 8px; font-size: 12.5px; color: {NAVY};
+  }}
+  .aviso-azul-titulo {{ font-weight: 600; margin-bottom: 8px; }}
+  .aviso-azul label {{ display: block; font-size: 11.5px; color: {GRAY}; margin-bottom: 4px; }}
+  .aviso-azul textarea {{
+    width: 100%; box-sizing: border-box; padding: 8px 10px; border: 1px solid {MUTED_GRID};
+    border-radius: 6px; font-size: 13px; font-family: inherit; resize: vertical; min-height: 44px;
+    margin-bottom: 8px;
+  }}
+  .boton-azul {{
+    font-size: 12px; padding: 6px 14px; border-radius: 6px; border: none;
+    background: {BLUE}; color: {SURFACE}; cursor: pointer; white-space: nowrap;
+  }}
+  .boton-azul:hover {{ background: #164A8C; }}
   .aviso-atendida {{
     margin: 14px 24px 0; padding: 8px 14px; background: #EAF6EE; border: 1px solid {GOOD};
     border-radius: 8px; font-size: 12.5px; color: {NAVY};

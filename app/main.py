@@ -496,16 +496,21 @@ def actualizar_nombre_chat(telefono: str, request: Request, nombre: str = Form("
 
 
 @app.post("/dashboard/chats/{telefono}/atender")
-def marcar_atendida_chat(telefono: str, request: Request, observaciones: str = Form("")):
-    """Un agente confirma que ya atendió (respondió, agendó, o resolvió) el caso que
-    Aurora había marcado como 'requiere_humano' para este número — queda registrado
-    quién lo hizo, qué hizo (observaciones), y el chat deja de aparecer en naranja."""
+def marcar_atendida_chat(telefono: str, request: Request, observaciones: str = Form(""), resultado: str = Form("")):
+    """Un agente confirma que ya gestionó el caso de este número — lo atendió (venía en
+    naranja, 'requiere_humano') o lo agendó (venía en azul, 'documentos_completos') —
+    con sus observaciones. Solo se aplica si el estado actual de la solicitud coincide
+    con el botón que se usó (evita que un formulario viejo cambie un estado distinto)."""
     email = _dashboard_email(request)
     if email is None:
         return RedirectResponse(url="/login", status_code=status.HTTP_303_SEE_OTHER)
-    solicitud = solicitudes.abierta_por_telefono(telefono)
-    if solicitud is not None and solicitud.estado == "requiere_humano":
-        solicitudes.marcar_atendida(solicitud.id, email, observaciones)
+    solicitud = solicitudes.ultima_por_telefono(telefono)
+    if (
+        solicitud is not None
+        and solicitud.estado in solicitudes.GESTION_DESTINO
+        and solicitudes.GESTION_DESTINO[solicitud.estado] == resultado
+    ):
+        solicitudes.marcar_gestionada(solicitud.id, email, resultado, observaciones)
     return RedirectResponse(url=f"/dashboard/chats/{telefono}", status_code=status.HTTP_303_SEE_OTHER)
 
 
