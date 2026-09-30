@@ -45,6 +45,20 @@ from app.whatsapp_client import download_media, get_media_url, send_image, send_
 app = FastAPI(title="Aurora - Compensar / Widex Colombia S.A.S.")
 
 
+@app.middleware("http")
+async def _sin_cache_en_dashboard(request: Request, call_next):
+    """El panel cambia todo el tiempo (un chat pasa a 'documentos completos', se marca
+    con Observaciones, etc.) — si el navegador guarda en caché una versión vieja de
+    /dashboard/... o /login, un agente puede quitar un filtro y ver datos desactualizados
+    aunque el servidor ya tenga la información correcta. Esto fuerza a pedir siempre la
+    versión más reciente."""
+    response = await call_next(request)
+    if request.url.path.startswith("/dashboard") or request.url.path == "/login":
+        response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
+        response.headers["Pragma"] = "no-cache"
+    return response
+
+
 def _responder(phone: str, texto: str) -> None:
     """Manda un mensaje de Aurora Y lo deja registrado en el historial del panel de
     chats — usa esto (no send_text directo) en cualquier respuesta automática del bot."""
