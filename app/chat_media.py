@@ -5,10 +5,13 @@ crear un bucket aparte en Supabase. No tiene nada que ver con la validación de
 documentos del trámite (orden clínica, etc.) — es solo el respaldo de lo que se ve en
 el historial del chat.
 """
+import logging
 import uuid
 
 from app.config import settings
 from app.db import get_client
+
+logger = logging.getLogger("chat_media")
 
 
 def subir_imagen(telefono: str, contenido: bytes, content_type: str) -> str:
@@ -30,7 +33,20 @@ def url_firmada(storage_path: str, segundos: int = 3600) -> str:
             storage_path, segundos
         )
     except Exception:
+        logger.exception("No se pudo firmar la URL para storage_path=%r (bucket=%r)", storage_path, settings.storage_bucket_documentos)
         return ""
     if isinstance(resp, dict):
-        return resp.get("signedURL") or resp.get("signedUrl") or ""
-    return getattr(resp, "signed_url", "") or ""
+        url = resp.get("signedURL") or resp.get("signedUrl") or ""
+        if not url:
+            logger.warning(
+                "create_signed_url no devolvió URL para storage_path=%r (bucket=%r) — respuesta: %r",
+                storage_path, settings.storage_bucket_documentos, resp,
+            )
+        return url
+    url = getattr(resp, "signed_url", "") or ""
+    if not url:
+        logger.warning(
+            "create_signed_url no devolvió URL para storage_path=%r (bucket=%r) — respuesta: %r",
+            storage_path, settings.storage_bucket_documentos, resp,
+        )
+    return url
