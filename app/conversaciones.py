@@ -23,6 +23,7 @@ class Conversacion:
     pausada_por: str
     ultimo_mensaje_en: str
     ultimo_mensaje_extracto: str
+    notas: str = ""
 
 
 @dataclass
@@ -44,6 +45,7 @@ def _row_to_conversacion(row: dict) -> Conversacion:
         pausada_por=row.get("pausada_por") or "",
         ultimo_mensaje_en=row.get("ultimo_mensaje_en") or "",
         ultimo_mensaje_extracto=row.get("ultimo_mensaje_extracto") or "",
+        notas=row.get("notas") or "",
     )
 
 
@@ -183,3 +185,10 @@ def actualizar_nombre(telefono: str, nombre: str) -> None:
     útil cuando el paciente escribe antes de que su solicitud quede asociada a un
     nombre conocido, o cuando llegó por un canal donde no lo dio."""
     get_client().table("conversaciones").update({"nombre": nombre or None}).eq("telefono", telefono).execute()
+
+
+def actualizar_notas(telefono: str, notas: str) -> None:
+    """Notas libres del agente sobre este chat — disponibles en cualquier conversación,
+    a diferencia de las observaciones de una solicitud (que solo existen mientras hay
+    un trámite abierto). Se editan desde el botón "Observaciones" del panel."""
+    get_client().table("conversaciones").update({"notas": notas.strip() or None}).eq("telefono", telefono).execute()

@@ -21,7 +21,7 @@ Endpoints:
 - GET  /dashboard/chats/{telefono}       → una conversación completa, con caja para contestar
 - POST /dashboard/chats/{telefono}/enviar   → un agente manda texto y/o una imagen (pausa a Aurora ahí)
 - POST /dashboard/chats/{telefono}/reanudar → un agente le devuelve el control a Aurora en ese chat
-- POST /dashboard/chats/{telefono}/atender  → un agente confirma que ya atendió un caso "requiere_humano"
+- POST /dashboard/chats/{telefono}/observaciones → un agente guarda una nota del chat (y cierra el caso si aplica)
 
 Ejecutar en desarrollo:
     uvicorn app.main:app --reload --port 8000
@@ -495,22 +495,21 @@ def actualizar_nombre_chat(telefono: str, request: Request, nombre: str = Form("
     return RedirectResponse(url=f"/dashboard/chats/{telefono}", status_code=status.HTTP_303_SEE_OTHER)
 
 
-@app.post("/dashboard/chats/{telefono}/atender")
-def marcar_atendida_chat(telefono: str, request: Request, observaciones: str = Form(""), resultado: str = Form("")):
-    """Un agente confirma que ya gestionó el caso de este número — lo atendió (venía en
-    naranja, 'requiere_humano') o lo agendó (venía en azul, 'documentos_completos') —
-    con sus observaciones. Solo se aplica si el estado actual de la solicitud coincide
-    con el botón que se usó (evita que un formulario viejo cambie un estado distinto)."""
+@app.post("/dashboard/chats/{telefono}/observaciones")
+def guardar_observaciones_chat(telefono: str, request: Request, observaciones: str = Form("")):
+    """Botón "Observaciones" del panel — disponible en cualquier chat, no solo en los
+    que están en naranja o azul. Siempre guarda la nota en la conversación; además, si
+    hay una solicitud abierta en 'requiere_humano' (naranja) o 'documentos_completos'
+    (azul), la cierra (atendida/agendada) con esa misma nota y deja registrado quién
+    fue — igual que antes, pero ahora desde un único botón general."""
     email = _dashboard_email(request)
     if email is None:
         return RedirectResponse(url="/login", status_code=status.HTTP_303_SEE_OTHER)
+    conversaciones.actualizar_notas(telefono, observaciones)
     solicitud = solicitudes.ultima_por_telefono(telefono)
-    if (
-        solicitud is not None
-        and solicitud.estado in solicitudes.GESTION_DESTINO
-        and solicitudes.GESTION_DESTINO[solicitud.estado] == resultado
-    ):
-        solicitudes.marcar_gestionada(solicitud.id, email, resultado, observaciones)
+    if solicitud is not None and solicitud.estado in solicitudes.GESTION_DESTINO:
+        estado_final = solicitudes.GESTION_DESTINO[solicitud.estado]
+        solicitudes.marcar_gestionada(solicitud.id, email, estado_final, observaciones)
     return RedirectResponse(url=f"/dashboard/chats/{telefono}", status_code=status.HTTP_303_SEE_OTHER)
 
 

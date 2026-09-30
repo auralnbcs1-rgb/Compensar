@@ -534,37 +534,33 @@ def render_chat(
         <button type="submit" class="boton-primario">Pausar Aurora</button>
       </form>"""
 
-    # Franja naranja: Aurora marcó este caso como "requiere_humano" (el paciente pidió
-    # un asesor, o Aurora no pudo resolver algo) — el agente confirma acá que ya lo
-    # atendió (respondió, agendó, o resolvió), y queda registrado quién fue.
-    aviso_asesor = ""
+    # Badge informativo según el estado de la solicitud (si hay una) — solo para que se
+    # vea de un vistazo; no depende de esto para poder anotar observaciones.
+    badge_gestion = ""
     if solicitud is not None and solicitud.estado == "requiere_humano":
-        aviso_asesor = f"""
-    <div class="aviso-naranja">
-      <div class="aviso-naranja-titulo">🟠 Este paciente pidió (o necesita) un asesor.</div>
-      <form method="post" action="/dashboard/chats/{conv.telefono}/atender">
-        <label for="observaciones">Observaciones (qué hiciste: agendaste, resolviste la duda, etc.)</label>
-        <textarea id="observaciones" name="observaciones" placeholder="Ej: Llamé al paciente y agendé para el 5 de octubre en sede Usaquén…"></textarea>
-        <input type="hidden" name="resultado" value="atendida" />
-        <button type="submit" class="boton-naranja">Marcar como atendida</button>
-      </form>
-    </div>"""
+        badge_gestion = '<div class="badge badge-naranja-chat">🟠 Requiere asesor</div>'
     elif solicitud is not None and solicitud.estado == "documentos_completos":
-        aviso_asesor = f"""
-    <div class="aviso-azul">
-      <div class="aviso-azul-titulo">🔵 Este paciente ya tiene todos los documentos — falta agendar.</div>
-      <form method="post" action="/dashboard/chats/{conv.telefono}/atender">
-        <label for="observaciones">Observaciones (fecha y sede de la cita, o qué se acordó)</label>
-        <textarea id="observaciones" name="observaciones" placeholder="Ej: Agendé para el 5 de octubre, 9am, sede Usaquén…"></textarea>
-        <input type="hidden" name="resultado" value="agendada" />
-        <button type="submit" class="boton-azul">Marcar como agendada</button>
-      </form>
-    </div>"""
+        badge_gestion = '<div class="badge badge-azul-chat">🔵 Documentos completos — falta agendar</div>'
     elif solicitud is not None and solicitud.estado in ("atendida", "agendada") and solicitud.atendido_por:
         etiqueta = "Atendida" if solicitud.estado == "atendida" else "Agendada"
         nota = f' — {html.escape(solicitud.observaciones)}' if solicitud.observaciones else ""
-        aviso_asesor = f"""
-    <div class="aviso-atendida">✅ {etiqueta} por {html.escape(solicitud.atendido_por)}{nota}</div>"""
+        badge_gestion = f'<div class="badge badge-hecho">✅ {etiqueta} por {html.escape(solicitud.atendido_por)}{nota}</div>'
+
+    # Observaciones: un solo botón, disponible en CUALQUIER chat (no solo naranja/azul).
+    # Guarda una nota libre en la conversación; si además hay un caso naranja o azul
+    # abierto, de paso lo cierra (atendida/agendada) con esa misma nota.
+    nota_valor = html.escape(conv.notas) if conv.notas else ""
+    gestion_dropdown = f"""
+        <details class="editar-caja">
+          <summary>Observaciones</summary>
+          <div class="editar-panel panel-ancho">
+            <form method="post" action="/dashboard/chats/{conv.telefono}/observaciones">
+              <label for="observaciones">Observaciones de este chat</label>
+              <textarea id="observaciones" name="observaciones" placeholder="Escribe aquí lo que hiciste o lo que necesites recordar…">{nota_valor}</textarea>
+              <button type="submit">Guardar</button>
+            </form>
+          </div>
+        </details>"""
 
     return f"""<!doctype html>
 <html lang="es">
@@ -626,41 +622,18 @@ def render_chat(
   }}
   .boton-primario:hover {{ background: #0A2E56; }}
 
-  .aviso-naranja {{
-    margin: 14px 24px 0; padding: 12px 14px; background: #FBEBDC; border: 1px solid {ORANGE};
-    border-radius: 8px; font-size: 12.5px; color: {NAVY};
+  .badge-naranja-chat, .badge-azul-chat, .badge-hecho {{
+    display: inline-block; font-size: 11px; margin-top: 3px; font-weight: 600;
   }}
-  .aviso-naranja-titulo {{ font-weight: 600; margin-bottom: 8px; }}
-  .aviso-naranja label {{ display: block; font-size: 11.5px; color: {GRAY}; margin-bottom: 4px; }}
-  .aviso-naranja textarea {{
+  .badge-naranja-chat {{ color: {ORANGE}; }}
+  .badge-azul-chat {{ color: {BLUE}; }}
+  .badge-hecho {{ color: {GOOD}; }}
+
+  .panel-ancho {{ width: 300px; }}
+  .editar-panel textarea {{
     width: 100%; box-sizing: border-box; padding: 8px 10px; border: 1px solid {MUTED_GRID};
-    border-radius: 6px; font-size: 13px; font-family: inherit; resize: vertical; min-height: 44px;
+    border-radius: 6px; font-size: 13px; font-family: inherit; resize: vertical; min-height: 60px;
     margin-bottom: 8px;
-  }}
-  .boton-naranja {{
-    font-size: 12px; padding: 6px 14px; border-radius: 6px; border: none;
-    background: {ORANGE}; color: {SURFACE}; cursor: pointer; white-space: nowrap;
-  }}
-  .boton-naranja:hover {{ background: #944909; }}
-  .aviso-azul {{
-    margin: 14px 24px 0; padding: 12px 14px; background: #EAF1FB; border: 1px solid {BLUE};
-    border-radius: 8px; font-size: 12.5px; color: {NAVY};
-  }}
-  .aviso-azul-titulo {{ font-weight: 600; margin-bottom: 8px; }}
-  .aviso-azul label {{ display: block; font-size: 11.5px; color: {GRAY}; margin-bottom: 4px; }}
-  .aviso-azul textarea {{
-    width: 100%; box-sizing: border-box; padding: 8px 10px; border: 1px solid {MUTED_GRID};
-    border-radius: 6px; font-size: 13px; font-family: inherit; resize: vertical; min-height: 44px;
-    margin-bottom: 8px;
-  }}
-  .boton-azul {{
-    font-size: 12px; padding: 6px 14px; border-radius: 6px; border: none;
-    background: {BLUE}; color: {SURFACE}; cursor: pointer; white-space: nowrap;
-  }}
-  .boton-azul:hover {{ background: #164A8C; }}
-  .aviso-atendida {{
-    margin: 14px 24px 0; padding: 8px 14px; background: #EAF6EE; border: 1px solid {GOOD};
-    border-radius: 8px; font-size: 12.5px; color: {NAVY};
   }}
 
   .hilo-scroll {{ flex: 1; overflow-y: auto; padding: 20px 24px; background: #FAFBFC; }}
@@ -701,6 +674,7 @@ def render_chat(
         <h1>{titulo}</h1>
         {f'<div class="cabecera-telefono">{conv.telefono}</div>' if conv.nombre else ""}
         {f'<div class="badge badge-pausada">Tú tienes el control{" · " + html.escape(conv.pausada_por) if conv.pausada_por else ""}</div>' if conv.pausada else ""}
+        {badge_gestion}
       </div>
       <div class="cabecera-acciones">
         <details class="editar-caja">
@@ -713,11 +687,10 @@ def render_chat(
             </form>
           </div>
         </details>
+        {gestion_dropdown}
         {boton_estado}
       </div>
     </div>
-
-    {aviso_asesor}
 
     <div class="hilo-scroll"><div class="hilo">{burbujas}</div></div>
 
