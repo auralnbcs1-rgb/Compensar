@@ -46,6 +46,7 @@ class Solicitud:
     regimen: str = ""
     telefono_2: str = ""
     correo: str = ""
+    atendido_por: str = ""
 
 
 def _row_to_solicitud(row: dict) -> Solicitud:
@@ -62,6 +63,7 @@ def _row_to_solicitud(row: dict) -> Solicitud:
         regimen=row.get("regimen") or "",
         telefono_2=row.get("telefono_2") or "",
         correo=row.get("correo") or "",
+        atendido_por=row.get("atendido_por") or "",
     )
 
 
@@ -114,6 +116,22 @@ def abierta_por_telefono(telefono: str) -> Optional[Solicitud]:
     return _row_to_solicitud(resp.data[0]) if resp.data else None
 
 
+def ultima_por_telefono(telefono: str) -> Optional[Solicitud]:
+    """La solicitud más reciente de este número, esté abierta o ya cerrada — la usa el
+    panel de chats para saber si el caso quedó pidiendo un asesor, o quién ya lo atendió,
+    incluso después de que se marcó como atendida."""
+    resp = (
+        get_client()
+        .table("solicitudes")
+        .select("*")
+        .eq("telefono", telefono)
+        .order("creado_en", desc=True)
+        .limit(1)
+        .execute()
+    )
+    return _row_to_solicitud(resp.data[0]) if resp.data else None
+
+
 def actualizar_estado(solicitud_id: int, estado: str) -> None:
     get_client().table("solicitudes").update(
         {"estado": estado, "actualizado_en": datetime.now(timezone.utc).isoformat()}
@@ -133,6 +151,35 @@ def listas_para_agente(limit: int = 50) -> list[Solicitud]:
         .execute()
     )
     return [_row_to_solicitud(row) for row in resp.data]
+
+
+def requieren_asesor(limit: int = 50) -> list[Solicitud]:
+    """Solicitudes que Aurora marcó como 'requiere_humano' — la franja naranja: el
+    paciente pidió (o necesita) que un asesor lo atienda directamente. Deja de
+    aparecer aquí en cuanto un agente la marca como atendida con `marcar_atendida`."""
+    resp = (
+        get_client()
+        .table("solicitudes")
+        .select("*")
+        .eq("estado", "requiere_humano")
+        .order("actualizado_en", desc=True)
+        .limit(limit)
+        .execute()
+    )
+    return [_row_to_solicitud(row) for row in resp.data]
+
+
+def marcar_atendida(solicitud_id: int, agente_email: str) -> None:
+    """Un agente confirma que ya atendió (respondió, agendó, o resolvió por su cuenta)
+    a un paciente que Aurora había marcado como 'requiere_humano' — cierra el caso y
+    deja registrado quién lo hizo, para que se vea en el panel."""
+    get_client().table("solicitudes").update(
+        {
+            "estado": "atendida",
+            "atendido_por": agente_email,
+            "actualizado_en": datetime.now(timezone.utc).isoformat(),
+        }
+    ).eq("id", solicitud_id).execute()
 
 
 def contar_por_estado() -> dict[str, int]:

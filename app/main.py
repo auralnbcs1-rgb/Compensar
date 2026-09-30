@@ -21,6 +21,7 @@ Endpoints:
 - GET  /dashboard/chats/{telefono}       → una conversación completa, con caja para contestar
 - POST /dashboard/chats/{telefono}/enviar   → un agente manda texto y/o una imagen (pausa a Aurora ahí)
 - POST /dashboard/chats/{telefono}/reanudar → un agente le devuelve el control a Aurora en ese chat
+- POST /dashboard/chats/{telefono}/atender  → un agente confirma que ya atendió un caso "requiere_humano"
 
 Ejecutar en desarrollo:
     uvicorn app.main:app --reload --port 8000
@@ -415,7 +416,11 @@ def lista_chats(request: Request, q: str = "", estado: str = "todas"):
     # Franja azul: teléfonos con una solicitud en "documentos_completos" — Aurora ya
     # tiene todo lo que necesita y el chat queda listo para que el agente lo tome.
     listos = {s.telefono for s in solicitudes.listas_para_agente(limit=500)}
-    return render_lista_chats(chats, email=email, busqueda=q, estado=estado, listos=listos)
+    # Franja naranja: teléfonos con una solicitud en "requiere_humano" — Aurora no pudo
+    # resolver algo (o el paciente pidió un asesor) y el chat necesita que un agente lo
+    # atienda directamente.
+    naranjas = {s.telefono for s in solicitudes.requieren_asesor(limit=500)}
+    return render_lista_chats(chats, email=email, busqueda=q, estado=estado, listos=listos, naranjas=naranjas)
 
 
 @app.get("/dashboard/chats/{telefono}", response_class=HTMLResponse)
@@ -427,7 +432,8 @@ def ver_chat(telefono: str, request: Request):
     if conv is None:
         return RedirectResponse(url="/dashboard/chats", status_code=status.HTTP_303_SEE_OTHER)
     historial = conversaciones.historial(telefono)
-    return render_chat(conv, historial, email=email)
+    solicitud = solicitudes.ultima_por_telefono(telefono)
+    return render_chat(conv, historial, email=email, solicitud=solicitud)
 
 
 @app.post("/dashboard/chats/{telefono}/enviar")
@@ -486,6 +492,20 @@ def actualizar_nombre_chat(telefono: str, request: Request, nombre: str = Form("
     if email is None:
         return RedirectResponse(url="/login", status_code=status.HTTP_303_SEE_OTHER)
     conversaciones.actualizar_nombre(telefono, nombre.strip())
+    return RedirectResponse(url=f"/dashboard/chats/{telefono}", status_code=status.HTTP_303_SEE_OTHER)
+
+
+@app.post("/dashboard/chats/{telefono}/atender")
+def marcar_atendida_chat(telefono: str, request: Request):
+    """Un agente confirma que ya atendió (respondió, agendó, o resolvió) el caso que
+    Aurora había marcado como 'requiere_humano' para este número — queda registrado
+    quién lo hizo y el chat deja de aparecer en naranja."""
+    email = _dashboard_email(request)
+    if email is None:
+        return RedirectResponse(url="/login", status_code=status.HTTP_303_SEE_OTHER)
+    solicitud = solicitudes.abierta_por_telefono(telefono)
+    if solicitud is not None and solicitud.estado == "requiere_humano":
+        solicitudes.marcar_atendida(solicitud.id, email)
     return RedirectResponse(url=f"/dashboard/chats/{telefono}", status_code=status.HTTP_303_SEE_OTHER)
 
 

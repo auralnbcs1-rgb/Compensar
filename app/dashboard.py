@@ -11,8 +11,10 @@ en el dashboard es la forma real de verlo: ver nota en README.md.
 """
 import html
 from datetime import date, datetime
+from typing import Optional
 
 from app.conversaciones import Conversacion, Mensaje
+from app.solicitudes import Solicitud
 from app.stats import DashboardStats
 
 NAVY = "#041E42"
@@ -21,6 +23,7 @@ TEAL = "#10616F"       # acento — magnitud (barras)
 GOOD = "#1E8E5A"        # meta cumplida
 BEHIND = "#B3261E"      # por debajo de la meta
 BLUE = "#1D5FB3"        # documentos completos — listo para el agente (franja azul)
+ORANGE = "#B5590B"      # requiere asesor — Aurora no pudo resolverlo (franja naranja)
 SURFACE = "#FFFFFF"
 MUTED_GRID = "#E4E4E4"
 
@@ -300,7 +303,7 @@ def _sidebar(activo: str, email: str) -> str:
   </nav>"""
 
 
-def _fila_chat(conv: Conversacion, lista: bool = False) -> str:
+def _fila_chat(conv: Conversacion, lista: bool = False, naranja: bool = False) -> str:
     titulo = html.escape(conv.nombre) if conv.nombre else conv.telefono
     subtitulo = f" · {conv.telefono}" if conv.nombre else ""
     extracto = html.escape(conv.ultimo_mensaje_extracto)
@@ -308,11 +311,15 @@ def _fila_chat(conv: Conversacion, lista: bool = False) -> str:
         badge = f'<span class="badge badge-pausada">Tú tienes el control{" · " + html.escape(conv.pausada_por) if conv.pausada_por else ""}</span>'
     else:
         badge = '<span class="badge badge-activa">● Aurora activa</span>'
+    if naranja:
+        badge += '<span class="badge badge-naranja">● Requiere asesor</span>'
     if lista:
         badge += '<span class="badge badge-lista">● Documentos completos</span>'
-    clase_lista = " fila-chat-lista" if lista else ""
+    # Si necesita asesor Y ya tiene documentos completos a la vez, prima el naranja —
+    # es lo más urgente de atender.
+    clase_fila = " fila-chat-naranja" if naranja else (" fila-chat-lista" if lista else "")
     return f"""
-    <a class="fila-chat{clase_lista}" href="/dashboard/chats/{conv.telefono}" target="chatframe">
+    <a class="fila-chat{clase_fila}" href="/dashboard/chats/{conv.telefono}" target="chatframe">
       <div class="fila-chat-avatar">{_avatar(conv.telefono)}</div>
       <div class="fila-chat-cuerpo">
         <div class="fila-chat-encabezado">
@@ -339,6 +346,7 @@ def render_lista_chats(
     busqueda: str = "",
     estado: str = "todas",
     listos: frozenset[str] = frozenset(),
+    naranjas: frozenset[str] = frozenset(),
 ) -> str:
     if estado == "activas":
         chats = [c for c in chats if not c.pausada]
@@ -346,8 +354,10 @@ def render_lista_chats(
         chats = [c for c in chats if c.pausada]
     elif estado == "listas":
         chats = [c for c in chats if c.telefono in listos]
+    elif estado == "asesor":
+        chats = [c for c in chats if c.telefono in naranjas]
 
-    filas = "".join(_fila_chat(c, lista=c.telefono in listos) for c in chats)
+    filas = "".join(_fila_chat(c, lista=c.telefono in listos, naranja=c.telefono in naranjas) for c in chats)
     if not filas:
         filas = '<p class="fila-azul-vacio">No hay conversaciones que coincidan.</p>'
 
@@ -414,6 +424,8 @@ def render_lista_chats(
   .fila-chat:hover {{ background: #F3F5F8; }}
   .fila-chat-lista {{ background: #EAF1FB; }}
   .fila-chat-lista:hover {{ background: #DEE9F9; }}
+  .fila-chat-naranja {{ background: #FBEBDC; }}
+  .fila-chat-naranja:hover {{ background: #F7DFC5; }}
   .fila-chat-avatar {{
     flex: none; width: 38px; height: 38px; border-radius: 50%; background: {NAVY}; color: {SURFACE};
     display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700;
@@ -430,6 +442,7 @@ def render_lista_chats(
   .badge-activa {{ color: {GOOD}; }}
   .badge-pausada {{ color: {BEHIND}; }}
   .badge-lista {{ color: {BLUE}; }}
+  .badge-naranja {{ color: {ORANGE}; }}
   .fila-azul-vacio {{ font-size: 13px; color: {GRAY}; padding: 12px 8px; }}
 
   .detalle-col {{ flex: 1; min-width: 0; }}
@@ -450,6 +463,7 @@ def render_lista_chats(
             {opcion("activas", "Aurora activa")}
             {opcion("pausadas", "Requieren atención")}
             {opcion("listas", "Documentos completos")}
+            {opcion("asesor", "Requiere asesor")}
           </select>
         </form>
       </div>
@@ -502,7 +516,9 @@ def _burbuja(m: Mensaje) -> str:
     </div>"""
 
 
-def render_chat(conv: Conversacion, historial: list[Mensaje], email: str = "") -> str:
+def render_chat(
+    conv: Conversacion, historial: list[Mensaje], email: str = "", solicitud: Optional[Solicitud] = None
+) -> str:
     titulo = html.escape(conv.nombre) if conv.nombre else conv.telefono
     nombre_valor = html.escape(conv.nombre) if conv.nombre else ""
     burbujas = "".join(_burbuja(m) for m in historial) or '<p class="fila-vacio">Todavía no hay mensajes.</p>'
@@ -517,6 +533,22 @@ def render_chat(conv: Conversacion, historial: list[Mensaje], email: str = "") -
       <form method="post" action="/dashboard/chats/{conv.telefono}/pausar" style="display:inline;">
         <button type="submit" class="boton-primario">Pausar Aurora</button>
       </form>"""
+
+    # Franja naranja: Aurora marcó este caso como "requiere_humano" (el paciente pidió
+    # un asesor, o Aurora no pudo resolver algo) — el agente confirma acá que ya lo
+    # atendió (respondió, agendó, o resolvió), y queda registrado quién fue.
+    aviso_asesor = ""
+    if solicitud is not None and solicitud.estado == "requiere_humano":
+        aviso_asesor = f"""
+    <div class="aviso-naranja">
+      <span>🟠 Este paciente pidió (o necesita) un asesor.</span>
+      <form method="post" action="/dashboard/chats/{conv.telefono}/atender" style="display:inline;">
+        <button type="submit" class="boton-naranja">Marcar como atendida</button>
+      </form>
+    </div>"""
+    elif solicitud is not None and solicitud.estado == "atendida" and solicitud.atendido_por:
+        aviso_asesor = f"""
+    <div class="aviso-atendida">✅ Atendida por {html.escape(solicitud.atendido_por)}</div>"""
 
     return f"""<!doctype html>
 <html lang="es">
@@ -578,6 +610,21 @@ def render_chat(conv: Conversacion, historial: list[Mensaje], email: str = "") -
   }}
   .boton-primario:hover {{ background: #0A2E56; }}
 
+  .aviso-naranja {{
+    margin: 14px 24px 0; padding: 10px 14px; background: #FBEBDC; border: 1px solid {ORANGE};
+    border-radius: 8px; display: flex; align-items: center; justify-content: space-between;
+    gap: 10px; font-size: 12.5px; color: {NAVY}; flex-wrap: wrap; row-gap: 8px;
+  }}
+  .boton-naranja {{
+    font-size: 12px; padding: 6px 14px; border-radius: 6px; border: none;
+    background: {ORANGE}; color: {SURFACE}; cursor: pointer; white-space: nowrap;
+  }}
+  .boton-naranja:hover {{ background: #944909; }}
+  .aviso-atendida {{
+    margin: 14px 24px 0; padding: 8px 14px; background: #EAF6EE; border: 1px solid {GOOD};
+    border-radius: 8px; font-size: 12.5px; color: {NAVY};
+  }}
+
   .hilo-scroll {{ flex: 1; overflow-y: auto; padding: 20px 24px; background: #FAFBFC; }}
   .hilo {{ display: flex; flex-direction: column; gap: 10px; max-width: 640px; margin: 0 auto; }}
   .burbuja {{ max-width: 78%; border-radius: 12px; padding: 9px 13px; font-size: 13.5px; box-shadow: 0 1px 1px rgba(4,30,66,0.05); }}
@@ -631,6 +678,8 @@ def render_chat(conv: Conversacion, historial: list[Mensaje], email: str = "") -
         {boton_estado}
       </div>
     </div>
+
+    {aviso_asesor}
 
     <div class="hilo-scroll"><div class="hilo">{burbujas}</div></div>
 
