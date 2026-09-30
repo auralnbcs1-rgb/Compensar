@@ -15,11 +15,18 @@ logger = logging.getLogger("chat_media")
 
 
 def subir_imagen(telefono: str, contenido: bytes, content_type: str) -> str:
+    """Devuelve "" si Supabase no logra guardar la imagen (en vez de tumbar todo el
+    webhook con un error 500) — el mensaje se sigue registrando igual, solo que el
+    panel avisa que esa imagen puntual no se pudo guardar en vez de mostrarla."""
     ext = "png" if "png" in content_type else "jpg"
     path = f"chat/{telefono}/{uuid.uuid4().hex}.{ext}"
-    get_client().storage.from_(settings.storage_bucket_documentos).upload(
-        path, contenido, {"content-type": content_type}
-    )
+    try:
+        get_client().storage.from_(settings.storage_bucket_documentos).upload(
+            path, contenido, {"content-type": content_type}
+        )
+    except Exception:
+        logger.exception("No se pudo subir la imagen a storage_path=%r (bucket=%r)", path, settings.storage_bucket_documentos)
+        return ""
     return path
 
 

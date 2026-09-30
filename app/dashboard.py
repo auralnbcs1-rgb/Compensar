@@ -505,12 +505,19 @@ def _burbuja(m: Mensaje) -> str:
     else:
         quien = m.enviado_por or "Agente"
 
-    if m.tipo == "imagen" and m.storage_path:
-        url = url_firmada(m.storage_path)
-        if url:
-            cuerpo = f'<img src="{url}" alt="Imagen del chat" style="max-width:220px; border-radius:8px; display:block;" />'
+    if m.tipo == "imagen":
+        if m.storage_path:
+            url = url_firmada(m.storage_path)
+            cuerpo = (
+                f'<img src="{url}" alt="Imagen del chat" style="max-width:220px; border-radius:8px; display:block;" />'
+                if url
+                else f'<div style="font-style:italic; color:{GRAY};">No se pudo cargar esta imagen.</div>'
+            )
         else:
-            cuerpo = f'<div style="font-style:italic; color:{GRAY};">No se pudo cargar esta imagen.</div>'
+            # subir_imagen() no logró guardarla en Supabase Storage — no hay storage_path
+            # que intentar firmar, así que el aviso es distinto al de arriba (esa sí se
+            # guardó, solo falló mostrarla).
+            cuerpo = f'<div style="font-style:italic; color:{GRAY};">Esta imagen no se pudo guardar.</div>'
         if m.contenido:
             cuerpo += f'<div style="margin-top:4px;">{_con_negritas(html.escape(m.contenido))}</div>'
     else:
