@@ -14,7 +14,7 @@ from datetime import date, datetime
 from typing import Optional
 
 from app.conversaciones import Conversacion, Mensaje
-from app.solicitudes import GESTION_DESTINO, Solicitud
+from app.solicitudes import GESTION_DESTINO, NOMBRE_SERVICIO, Solicitud
 from app.stats import DashboardStats
 
 NAVY = "#041E42"
@@ -163,6 +163,10 @@ def _fila_lista_azul(nombre: str, cedula: str, servicio_nombre: str, telefono: s
     </div>"""
 
 
+def _fila_servicio(nombre: str, total: int, abiertas: int) -> str:
+    return f"<tr><td>{html.escape(nombre)}</td><td>{total}</td><td>{abiertas}</td></tr>"
+
+
 def render_dashboard(stats: DashboardStats, email: str = "") -> str:
     color_hoy = GOOD if stats.confirmados_hoy >= stats.meta_diaria else BEHIND
     proyeccion = (
@@ -185,6 +189,12 @@ def render_dashboard(stats: DashboardStats, email: str = "") -> str:
     )
     if not filas_azules:
         filas_azules = '<p class="fila-azul-vacio">Todavía no hay ninguna solicitud con documentos completos.</p>'
+
+    # Por trámite: histórico completo (desde siempre) vs. las que siguen abiertas ahora.
+    filas_servicio = "".join(
+        _fila_servicio(nombre, stats.servicio_totales.get(codigo, 0), stats.servicio_abiertas.get(codigo, 0))
+        for codigo, nombre in NOMBRE_SERVICIO.items()
+    )
 
     return f"""<!doctype html>
 <html lang="es">
@@ -231,7 +241,7 @@ def render_dashboard(stats: DashboardStats, email: str = "") -> str:
   </div>
   <p class="subtitulo">Actualizado {date.today().isoformat()} · datos de Supabase, sin depender del Excel</p>
   <p class="subtitulo">Aurora recolecta documentos y confirma interés — el agente de atención al cliente cierra la cita (fecha/hora) por fuera del bot.</p>
-  <p class="subtitulo"><a href="/dashboard/chats" style="color:{NAVY}; font-weight:600;">Ver conversaciones →</a></p>
+  <p class="subtitulo"><a href="/dashboard/chats" style="color:{NAVY}; font-weight:600;">Ver conversaciones →</a> · <a href="/dashboard/completas" style="color:{NAVY}; font-weight:600;">Ver solicitudes completas →</a></p>
 
   <div class="tiles">
     {_tile("Confirmados hoy", f"{stats.confirmados_hoy} / {stats.meta_diaria}", "meta diaria de confirmaciones", color_hoy)}
@@ -244,6 +254,24 @@ def render_dashboard(stats: DashboardStats, email: str = "") -> str:
     {_tile("Documentos completos", str(documentos_completos), "listos para el agente", BLUE)}
     {_tile("Esperando documentos", str(pendiente_docs))}
     {_tile("Orden vencida", str(orden_vencida), "hay que pedir una nueva")}
+  </div>
+
+  <div class="tiles">
+    {_tile("Gestionados hoy", str(stats.gestionados_hoy), "atendidos + agendados", GOOD)}
+    {_tile("Gestionados esta semana", str(stats.gestionados_semana))}
+    {_tile("Gestionados este mes", str(stats.gestionados_mes))}
+  </div>
+
+  <div class="panel">
+    <h2>Solicitudes por trámite</h2>
+    <p class="panel-nota">
+      "Histórico" cuenta todas las solicitudes que ha habido de ese trámite desde siempre
+      (abiertas y cerradas). "Abiertas" son las que siguen en curso ahora mismo.
+    </p>
+    <table>
+      <tr><td><strong>Trámite</strong></td><td><strong>Histórico</strong></td><td><strong>Abiertas</strong></td></tr>
+      {filas_servicio}
+    </table>
   </div>
 
   <div class="panel">
@@ -273,11 +301,6 @@ def render_dashboard(stats: DashboardStats, email: str = "") -> str:
 </html>"""
 
 
-# ---------------------------------------------------------------------------
-# Panel de chats — bandeja de conversaciones + entrar a escribir/mandar imágenes como
-# agente (equivalente al inbox de Amanda). Reusa NAVY/GRAY/TEAL/SURFACE/MUTED_GRID.
-# ---------------------------------------------------------------------------
-
 def _fmt_hora(iso: str) -> str:
     if not iso:
         return ""
@@ -293,9 +316,9 @@ def _avatar(telefono: str) -> str:
 
 
 def _sidebar(activo: str, email: str) -> str:
-    """Barra lateral de navegación — inspirada en el panel de Amanda (Chats / Salir),
-    con lo que sí existe en Aurora: no hay 'Agendados' porque Aurora no agenda citas,
-    ni 'Reportes' (se quitó del nav)."""
+    """Barra lateral de navegación — inspirada en el panel de Amanda (Chats / Salir).
+    Incluye Chats, Completas (recuadro de cada paciente con documentos completos) y
+    Reportes (confirmaciones, trámites por volumen, gestionados por período)."""
     def item(href: str, etiqueta: str, clave: str) -> str:
         activo_cls = " sb-activo" if clave == activo else ""
         return f'<a class="sb-item{activo_cls}" href="{href}">{etiqueta}</a>'
@@ -305,6 +328,8 @@ def _sidebar(activo: str, email: str) -> str:
     <div class="sb-logo">A</div>
     <div class="sb-nav">
       {item("/dashboard/chats", "Chats", "chats")}
+      {item("/dashboard/completas", "Completas", "completas")}
+      {item("/dashboard/reportes", "Reportes", "reportes")}
     </div>
     <a class="sb-item sb-salir" href="/logout" title="{html.escape(email)}">Salir</a>
   </nav>"""
@@ -537,8 +562,76 @@ def _burbuja(m: Mensaje) -> str:
     </div>"""
 
 
+def _fmt_fecha_corta(iso: str) -> str:
+    if not iso:
+        return ""
+    try:
+        return datetime.fromisoformat(iso).strftime("%d/%m/%Y")
+    except ValueError:
+        return iso
+
+
+_NOMBRE_DOC_RECUADRO = {
+    "orden_clinica": "Orden clínica",
+    "autorizacion_servicio": "Autorización de servicio",
+    "cedula": "Foto de cédula",
+}
+
+
+def _fila_dato(etiqueta: str, valor: str) -> str:
+    if not valor:
+        return ""
+    return (
+        f'<div class="dato-fila"><span class="dato-etiqueta">{html.escape(etiqueta)}</span>'
+        f'<span class="dato-valor">{html.escape(str(valor))}</span></div>'
+    )
+
+
+def _fila_documento(doc: dict) -> str:
+    nombre = _NOMBRE_DOC_RECUADRO.get(doc.get("tipo"), doc.get("tipo", ""))
+    extra = ""
+    if doc.get("tipo") == "orden_clinica":
+        if doc.get("vigente") is True:
+            extra = " · vigente"
+        elif doc.get("vigente") is False:
+            extra = " · vencida"
+    return f'<div class="doc-fila">✅ {html.escape(nombre)}{extra}</div>'
+
+
+def _recuadro_paciente(solicitud: Solicitud, documentos_lista: list[dict]) -> str:
+    """Recuadro con toda la información que Aurora ya recolectó de este paciente —
+    datos personales + documentos recibidos. Se usa tanto en el chat individual (cuando
+    ya tiene todo) como en la lista de "Solicitudes completas"."""
+    nombre_servicio = NOMBRE_SERVICIO.get(solicitud.servicio, solicitud.servicio)
+    docs_html = "".join(_fila_documento(d) for d in documentos_lista) or (
+        '<div class="doc-fila-vacio">Sin documentos registrados.</div>'
+    )
+    filas = "".join(
+        [
+            _fila_dato("Trámite", nombre_servicio),
+            _fila_dato("Cédula", solicitud.cedula),
+            _fila_dato("Teléfono", solicitud.telefono),
+            _fila_dato("Segundo teléfono", solicitud.telefono_2),
+            _fila_dato("Correo", solicitud.correo),
+            _fila_dato("Fecha de nacimiento", _fmt_fecha_corta(solicitud.fecha_nacimiento)),
+            _fila_dato("Dirección", solicitud.direccion),
+            _fila_dato("Régimen", solicitud.regimen),
+        ]
+    )
+    return f"""
+    <div class="recuadro-paciente">
+      <div class="recuadro-titulo">{html.escape(solicitud.nombre)} — información completa</div>
+      <div class="recuadro-datos">{filas}</div>
+      <div class="recuadro-documentos">{docs_html}</div>
+    </div>"""
+
+
 def render_chat(
-    conv: Conversacion, historial: list[Mensaje], email: str = "", solicitud: Optional[Solicitud] = None
+    conv: Conversacion,
+    historial: list[Mensaje],
+    email: str = "",
+    solicitud: Optional[Solicitud] = None,
+    documentos_lista: Optional[list[dict]] = None,
 ) -> str:
     titulo = html.escape(conv.nombre) if conv.nombre else conv.telefono
     nombre_valor = html.escape(conv.nombre) if conv.nombre else ""
@@ -566,6 +659,12 @@ def render_chat(
         etiqueta = "Atendida" if solicitud.estado == "atendida" else "Agendada"
         nota = f' — {html.escape(solicitud.observaciones)}' if solicitud.observaciones else ""
         badge_gestion = f'<div class="badge badge-hecho">✅ {etiqueta} por {html.escape(solicitud.atendido_por)}{nota}</div>'
+
+    # Recuadro con toda la información del paciente — se muestra en cuanto la solicitud
+    # tiene documentos completos (o ya se agendó a partir de ahí); no antes, porque
+    # todavía puede faltar algo.
+    mostrar_recuadro = solicitud is not None and solicitud.estado in ("documentos_completos", "agendada")
+    recuadro_html = _recuadro_paciente(solicitud, documentos_lista or []) if mostrar_recuadro else ""
 
     # Observaciones: un solo botón, disponible en CUALQUIER chat (no solo naranja/azul).
     # Guarda una nota libre en la conversación; si además hay un caso naranja o azul
@@ -674,6 +773,18 @@ def render_chat(
     margin-bottom: 8px;
   }}
 
+  .recuadro-paciente {{
+    margin: 14px 24px 0; padding: 14px 16px; border: 1px solid #D7E3F7; background: #EEF3FC;
+    border-radius: 10px;
+  }}
+  .recuadro-titulo {{ font-size: 13px; font-weight: 700; color: {NAVY}; margin-bottom: 8px; }}
+  .recuadro-datos {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 4px 16px; margin-bottom: 8px; }}
+  .dato-fila {{ font-size: 12.5px; }}
+  .dato-etiqueta {{ color: {GRAY}; margin-right: 6px; }}
+  .dato-valor {{ color: {NAVY}; font-weight: 600; }}
+  .recuadro-documentos {{ display: flex; flex-wrap: wrap; gap: 10px; font-size: 12px; color: {NAVY}; border-top: 1px solid #D7E3F7; padding-top: 8px; }}
+  .doc-fila-vacio {{ font-size: 12px; color: {GRAY}; }}
+
   .hilo-scroll {{ flex: 1; overflow-y: auto; padding: 20px 24px; background: #FAFBFC; }}
   .hilo {{ display: flex; flex-direction: column; gap: 10px; max-width: 640px; margin: 0 auto; }}
   .burbuja {{ max-width: 78%; border-radius: 12px; padding: 9px 13px; font-size: 13.5px; box-shadow: 0 1px 1px rgba(4,30,66,0.05); }}
@@ -731,6 +842,8 @@ def render_chat(
       </div>
     </div>
 
+    {recuadro_html}
+
     <div class="hilo-scroll"><div class="hilo">{burbujas}</div></div>
 
     <form class="enviar" method="post" action="/dashboard/chats/{conv.telefono}/enviar" enctype="multipart/form-data">
@@ -746,6 +859,78 @@ def render_chat(
       </div>
       <p class="nota-envio">Al enviar, este chat queda a tu cargo — Aurora deja de contestar aquí hasta que le des a "Reactivar Aurora".</p>
     </form>
+  </div>
+</body>
+</html>"""
+
+
+def render_solicitudes_completas(items: list[tuple[Solicitud, list[dict]]], email: str = "") -> str:
+    """Página aparte con el recuadro completo de cada paciente que ya tiene todos sus
+    documentos — para verlos todos de un vistazo sin entrar chat por chat."""
+    if items:
+        tarjetas = "".join(_recuadro_paciente(s, docs) for s, docs in items)
+    else:
+        tarjetas = '<p class="fila-azul-vacio">Todavía no hay ninguna solicitud con documentos completos.</p>'
+
+    return f"""<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Solicitudes completas — Aurora (Compensar)</title>
+<style>
+  :root {{ color-scheme: light; }}
+  * {{ box-sizing: border-box; }}
+  html, body {{ height: 100%; }}
+  body {{
+    margin: 0; background: {SURFACE};
+    font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; color: {NAVY};
+  }}
+  .layout {{ display: flex; min-height: 100vh; }}
+  .sidebar {{
+    width: 76px; flex: none; background: {NAVY}; display: flex; flex-direction: column;
+    align-items: center; padding: 16px 0;
+  }}
+  .sb-logo {{
+    width: 34px; height: 34px; border-radius: 8px; background: {TEAL}; color: {SURFACE};
+    display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 15px;
+    margin-bottom: 28px;
+  }}
+  .sb-nav {{ display: flex; flex-direction: column; gap: 4px; flex: 1; width: 100%; }}
+  .sb-item {{
+    display: block; text-align: center; color: #B7C2D4; text-decoration: none; font-size: 11px;
+    padding: 10px 4px; margin: 0 8px; border-radius: 8px;
+  }}
+  .sb-item:hover {{ background: rgba(255,255,255,0.08); color: {SURFACE}; }}
+  .sb-activo {{ background: rgba(255,255,255,0.14); color: {SURFACE}; font-weight: 600; }}
+  .sb-salir {{ color: #8592A6; }}
+
+  .completas-col {{ flex: 1; min-width: 0; padding: 28px 32px 64px; max-width: 760px; }}
+  h1 {{ font-size: 20px; margin: 0 0 4px; }}
+  .subtitulo {{ color: {GRAY}; font-size: 13px; margin: 0 0 24px; }}
+  .fila-azul-vacio {{ font-size: 13px; color: {GRAY}; }}
+
+  .recuadro-paciente {{
+    margin: 0 0 16px; padding: 14px 16px; border: 1px solid #D7E3F7; background: #EEF3FC;
+    border-radius: 10px;
+  }}
+  .recuadro-titulo {{ font-size: 13px; font-weight: 700; color: {NAVY}; margin-bottom: 8px; }}
+  .recuadro-datos {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 4px 16px; margin-bottom: 8px; }}
+  .dato-fila {{ font-size: 12.5px; }}
+  .dato-etiqueta {{ color: {GRAY}; margin-right: 6px; }}
+  .dato-valor {{ color: {NAVY}; font-weight: 600; }}
+  .recuadro-documentos {{ display: flex; flex-wrap: wrap; gap: 10px; font-size: 12px; color: {NAVY}; border-top: 1px solid #D7E3F7; padding-top: 8px; }}
+  .doc-fila-vacio {{ font-size: 12px; color: {GRAY}; }}
+</style>
+</head>
+<body>
+  <div class="layout">
+    {_sidebar("completas", email)}
+    <div class="completas-col">
+      <h1>Solicitudes con documentos completos</h1>
+      <p class="subtitulo">{len(items)} paciente(s) listos para que el agente agende.</p>
+      {tarjetas}
+    </div>
   </div>
 </body>
 </html>"""
