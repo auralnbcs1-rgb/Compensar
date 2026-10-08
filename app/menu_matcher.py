@@ -11,8 +11,9 @@ from app.solicitudes import SERVICIOS
 _PALABRAS_CLAVE = {
     "1": ["adaptacion", "protesis", "prostesis", "audifono nuevo", "ayuda auditiva", "entrega"],
     "2": ["prueba"],
-    "4": ["control"],
+    "3": ["control"],
     "5": ["terapia"],
+    "6": ["mantenimiento", "limpieza", "revision", "chequeo"],
 }
 
 _TABLA_TILDES = str.maketrans("áéíóúñ", "aeioun")
@@ -28,13 +29,13 @@ def coincidencia_local(mensaje: str) -> str | None:
     hay una coincidencia clara (y hay que preguntarle a Claude o mostrar el menú)."""
     texto = _sin_tildes(mensaje.strip().lower())
 
-    solo_numero = re.match(r"^\D*([1-5])\D*$", texto)
+    solo_numero = re.match(r"^\D*([1-6])\D*$", texto)
     if solo_numero:
         return SERVICIOS[solo_numero.group(1)][0]
 
     # tinnitus aparece en dos opciones (evaluación y terapia) — "terapia" desempata.
     if "tinnitus" in texto or "pitido" in texto or "zumbido" in texto:
-        return SERVICIOS["5"][0] if "terapia" in texto else SERVICIOS["3"][0]
+        return SERVICIOS["5"][0] if "terapia" in texto else SERVICIOS["4"][0]
 
     for opcion, palabras in _PALABRAS_CLAVE.items():
         if any(palabra in texto for palabra in palabras):

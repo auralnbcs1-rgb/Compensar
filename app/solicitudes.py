@@ -1,8 +1,8 @@
-"""Capa de datos sobre `solicitudes` — un trámite de un paciente para uno de los 5
-servicios de Aurora (evaluación y adaptación, prueba de audífono, evaluación tinnitus,
-control, terapia tinnitus). Independiente de `backlog`, que sigue siendo solo el
-backlog de entrega de audífonos de Compensar (ver `_sincronizar_backlog_si_aplica` en
-main.py para cómo se cruzan cuando aplica).
+"""Capa de datos sobre `solicitudes` — un trámite de un paciente para uno de los 6
+servicios de Aurora (evaluación y adaptación, prueba de audífono, control, evaluación
+tinnitus, terapia tinnitus, mantenimiento). Independiente de `backlog`, que sigue
+siendo solo el backlog de entrega de audífonos de Compensar (ver
+`_sincronizar_backlog_si_aplica` en main.py para cómo se cruzan cuando aplica).
 """
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -15,10 +15,11 @@ from app.db import get_client
 # de servicio + cédula además de la orden clínica — las marcadas con * en el pedido original).
 SERVICIOS = {
     "1": ("evaluacion_adaptacion", "Evaluación y adaptación de prótesis y ayudas auditivas", True),
-    "2": ("prueba_audifono", "Prueba de Audífono", False),
-    "3": ("evaluacion_tinnitus", "Evaluación Tinnitus", True),
-    "4": ("control", "Control (1er control 30 días posterior a la adaptación)", False),
+    "2": ("prueba_audifono", "Prueba de Audífono (orden de Compensar)", False),
+    "3": ("control", "Control (1er control 30 días posterior a la adaptación)", False),
+    "4": ("evaluacion_tinnitus", "Evaluación Tinnitus", True),
     "5": ("terapia_tinnitus", "Terapia Tinnitus", True),
+    "6": ("mantenimiento", "Mantenimiento", False),
 }
 
 NOMBRE_SERVICIO = {codigo: nombre for _, (codigo, nombre, _) in SERVICIOS.items()}
