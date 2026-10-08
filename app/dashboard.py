@@ -51,7 +51,7 @@ def _fmt_dia(iso: str) -> str:
 
 def _bar_chart_svg(stats: DashboardStats) -> str:
     valores = [c for _, c in stats.historial]
-    maximo = max(valores + [stats.meta_diaria, 1])
+    maximo = max(valores + [1])
 
     plot_w = CHART_W - PAD_L - 8
     plot_h = CHART_H - PAD_T - PAD_B
@@ -68,10 +68,9 @@ def _bar_chart_svg(stats: DashboardStats) -> str:
         x = PAD_L + i * gap + (gap - bar_w) / 2
         y = y_de(valor)
         h = (PAD_T + plot_h) - y
-        color = GOOD if valor >= stats.meta_diaria else TEAL
         bars.append(
             f'<rect x="{x:.1f}" y="{y:.1f}" width="{bar_w:.1f}" height="{max(h, 0):.1f}" '
-            f'rx="3" fill="{color}"><title>{fecha_iso}: {valor} confirmados</title></rect>'
+            f'rx="3" fill="{TEAL}"><title>{fecha_iso}: {valor} confirmados</title></rect>'
         )
         if i % 2 == 0 or n <= 7:
             labels.append(
@@ -79,20 +78,12 @@ def _bar_chart_svg(stats: DashboardStats) -> str:
                 f'fill="{GRAY}" text-anchor="middle">{_fmt_dia(fecha_iso)}</text>'
             )
 
-    meta_y = y_de(stats.meta_diaria)
-    meta_line = (
-        f'<line x1="{PAD_L}" y1="{meta_y:.1f}" x2="{CHART_W - 8}" y2="{meta_y:.1f}" '
-        f'stroke="{NAVY}" stroke-width="1.5" stroke-dasharray="4,3" />'
-        f'<text x="{CHART_W - 8}" y="{meta_y - 6:.1f}" font-size="10" fill="{NAVY}" '
-        f'text-anchor="end">Meta: {stats.meta_diaria}/día</text>'
-    )
-
     axis = f'<line x1="{PAD_L}" y1="{PAD_T + plot_h}" x2="{CHART_W - 8}" y2="{PAD_T + plot_h}" stroke="{MUTED_GRID}" stroke-width="1" />'
 
     return (
         f'<svg viewBox="0 0 {CHART_W} {CHART_H}" width="100%" height="{CHART_H}" '
-        f'role="img" aria-label="Pacientes confirmados por día, últimos {n} días, comparado con la meta diaria">'
-        f'{axis}{"".join(bars)}{meta_line}{"".join(labels)}'
+        f'role="img" aria-label="Pacientes confirmados por día, últimos {n} días">'
+        f'{axis}{"".join(bars)}{"".join(labels)}'
         f"</svg>"
     )
 
@@ -176,7 +167,6 @@ def _fila_servicio(nombre: str, total: int, abiertas: int) -> str:
 
 
 def render_dashboard(stats: DashboardStats, email: str = "") -> str:
-    color_hoy = GOOD if stats.confirmados_hoy >= stats.meta_diaria else BEHIND
     proyeccion = (
         f"{int(stats.dias_para_vaciar_backlog)} días al ritmo actual"
         if stats.dias_para_vaciar_backlog is not None
@@ -305,7 +295,7 @@ def render_dashboard(stats: DashboardStats, email: str = "") -> str:
 
       <div class="seccion-titulo">Confirmaciones</div>
       <div class="tiles">
-        {_tile("Confirmados hoy", f"{stats.confirmados_hoy} / {stats.meta_diaria}", "meta diaria de confirmaciones", color_hoy, icono="🎯")}
+        {_tile("Confirmados hoy", str(stats.confirmados_hoy), color=TEAL, icono="🎯")}
         {_tile("Confirmados este mes", str(stats.confirmados_mes), color=TEAL, icono="📈")}
         {_tile("Pendientes en backlog", str(stats.pendientes), color=NAVY, chip=DORADO, icono="📋")}
         {_tile("Backlog se vacía en", proyeccion, f"ritmo: {stats.ritmo_diario_promedio}/día", color=NAVY, chip=TURQUESA, icono="⏳")}
@@ -348,7 +338,7 @@ def render_dashboard(stats: DashboardStats, email: str = "") -> str:
       </div>
 
       <div class="panel panel-teal">
-        <h2>Confirmados por día (últimos {len(stats.historial)} días) vs. meta</h2>
+        <h2>Confirmados por día (últimos {len(stats.historial)} días)</h2>
         {_bar_chart_svg(stats)}
         <details>
           <summary>Ver como tabla</summary>
