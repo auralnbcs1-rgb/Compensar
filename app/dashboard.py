@@ -625,6 +625,9 @@ def _fila_dato(etiqueta: str, valor: str) -> str:
 
 
 def _fila_documento(doc: dict) -> str:
+    # import diferido: evita ciclos si algún día chat_media crece (mismo patrón que _burbuja)
+    from app.chat_media import url_firmada
+
     nombre = _NOMBRE_DOC_RECUADRO.get(doc.get("tipo"), doc.get("tipo", ""))
     extra = ""
     if doc.get("tipo") == "orden_clinica":
@@ -632,13 +635,26 @@ def _fila_documento(doc: dict) -> str:
             extra = " · vigente"
         elif doc.get("vigente") is False:
             extra = " · vencida"
-    return f'<div class="doc-fila">✅ {html.escape(nombre)}{extra}</div>'
+    etiqueta = f"{html.escape(nombre)}{extra}"
+
+    storage_path = doc.get("storage_path") or ""
+    url = url_firmada(storage_path) if storage_path else ""
+    if url:
+        return f"""
+        <a class="doc-miniatura" href="{url}" target="_blank" rel="noopener">
+          <img src="{url}" alt="{etiqueta}" loading="lazy" />
+          <span class="doc-miniatura-etiqueta">{etiqueta}</span>
+        </a>"""
+    # Sin imagen disponible (no se pudo guardar o firmar) — se deja el aviso de texto
+    # para no romper el recuadro, igual que hacía antes.
+    return f'<div class="doc-fila">✅ {etiqueta}</div>'
 
 
 def _recuadro_paciente(solicitud: Solicitud, documentos_lista: list[dict]) -> str:
-    """Recuadro con toda la información que Aurora ya recolectó de este paciente —
-    datos personales + documentos recibidos. Se usa tanto en el chat individual (cuando
-    ya tiene todo) como en la lista de "Solicitudes completas"."""
+    """Caja plegada por defecto con toda la información que Aurora ya recolectó de este
+    paciente — datos personales + fotos de los documentos recibidos. Se abre con un clic
+    en "Documentos completos" en vez de ocupar la pantalla de entrada. Se usa tanto en el
+    chat individual (cuando ya tiene todo) como en la lista de "Solicitudes completas"."""
     nombre_servicio = NOMBRE_SERVICIO.get(solicitud.servicio, solicitud.servicio)
     docs_html = "".join(_fila_documento(d) for d in documentos_lista) or (
         '<div class="doc-fila-vacio">Sin documentos registrados.</div>'
@@ -656,11 +672,17 @@ def _recuadro_paciente(solicitud: Solicitud, documentos_lista: list[dict]) -> st
         ]
     )
     return f"""
-    <div class="recuadro-paciente">
-      <div class="recuadro-titulo">{html.escape(solicitud.nombre)} — información completa</div>
-      <div class="recuadro-datos">{filas}</div>
-      <div class="recuadro-documentos">{docs_html}</div>
-    </div>"""
+    <details class="recuadro-paciente">
+      <summary class="recuadro-resumen">
+        <span class="recuadro-icono">📄</span>
+        <span class="recuadro-nombre">{html.escape(solicitud.nombre)}</span>
+        <span class="recuadro-boton">Documentos completos — ver información</span>
+      </summary>
+      <div class="recuadro-cuerpo">
+        <div class="recuadro-datos">{filas}</div>
+        <div class="recuadro-documentos">{docs_html}</div>
+      </div>
+    </details>"""
 
 
 def render_chat(
@@ -811,16 +833,36 @@ def render_chat(
   }}
 
   .recuadro-paciente {{
-    margin: 14px 24px 0; padding: 14px 16px; border: 1px solid #D7E3F7; background: #EEF3FC;
-    border-radius: 10px;
+    margin: 14px 24px 0; border: 1px solid #D7E3F7; background: #EEF3FC; border-radius: 10px;
+    overflow: hidden;
   }}
-  .recuadro-titulo {{ font-size: 13px; font-weight: 700; color: {NAVY}; margin-bottom: 8px; }}
-  .recuadro-datos {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 4px 16px; margin-bottom: 8px; }}
+  .recuadro-resumen {{
+    display: flex; align-items: center; gap: 8px; padding: 11px 16px; cursor: pointer;
+    list-style: none; font-size: 13px; color: {NAVY};
+  }}
+  .recuadro-resumen::-webkit-details-marker {{ display: none; }}
+  .recuadro-resumen:hover {{ background: rgba(29,95,179,0.08); }}
+  .recuadro-paciente[open] .recuadro-resumen {{ border-bottom: 1px solid #D7E3F7; }}
+  .recuadro-icono {{ font-size: 15px; }}
+  .recuadro-nombre {{ flex: 1; font-weight: 600; }}
+  .recuadro-boton {{
+    font-size: 11px; font-weight: 700; color: {BLUE}; background: {SURFACE};
+    border: 1px solid #D7E3F7; border-radius: 999px; padding: 4px 12px; white-space: nowrap;
+  }}
+  .recuadro-cuerpo {{ padding: 14px 16px; }}
+  .recuadro-datos {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 4px 16px; margin-bottom: 12px; }}
   .dato-fila {{ font-size: 12.5px; }}
   .dato-etiqueta {{ color: {GRAY}; margin-right: 6px; }}
   .dato-valor {{ color: {NAVY}; font-weight: 600; }}
-  .recuadro-documentos {{ display: flex; flex-wrap: wrap; gap: 10px; font-size: 12px; color: {NAVY}; border-top: 1px solid #D7E3F7; padding-top: 8px; }}
+  .recuadro-documentos {{ display: flex; flex-wrap: wrap; gap: 12px; border-top: 1px solid #D7E3F7; padding-top: 12px; }}
   .doc-fila-vacio {{ font-size: 12px; color: {GRAY}; }}
+  .doc-fila {{ font-size: 12px; color: {NAVY}; }}
+  .doc-miniatura {{ display: flex; flex-direction: column; align-items: center; gap: 4px; width: 108px; text-decoration: none; }}
+  .doc-miniatura img {{
+    width: 108px; height: 108px; object-fit: cover; border-radius: 8px; border: 1px solid #D7E3F7;
+    background: {SURFACE};
+  }}
+  .doc-miniatura-etiqueta {{ font-size: 10.5px; color: {NAVY}; text-align: center; line-height: 1.3; }}
 
   .hilo-scroll {{ flex: 1; overflow-y: auto; padding: 20px 24px; background: #FAFBFC; }}
   .hilo {{ display: flex; flex-direction: column; gap: 10px; max-width: 640px; margin: 0 auto; }}
@@ -948,16 +990,36 @@ def render_solicitudes_completas(items: list[tuple[Solicitud, list[dict]]], emai
   .fila-azul-vacio {{ font-size: 13px; color: {GRAY}; }}
 
   .recuadro-paciente {{
-    margin: 0 0 16px; padding: 14px 16px; border: 1px solid #D7E3F7; background: #EEF3FC;
-    border-radius: 10px;
+    margin: 0 0 16px; border: 1px solid #D7E3F7; background: #EEF3FC; border-radius: 10px;
+    overflow: hidden;
   }}
-  .recuadro-titulo {{ font-size: 13px; font-weight: 700; color: {NAVY}; margin-bottom: 8px; }}
-  .recuadro-datos {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 4px 16px; margin-bottom: 8px; }}
+  .recuadro-resumen {{
+    display: flex; align-items: center; gap: 8px; padding: 11px 16px; cursor: pointer;
+    list-style: none; font-size: 13px; color: {NAVY};
+  }}
+  .recuadro-resumen::-webkit-details-marker {{ display: none; }}
+  .recuadro-resumen:hover {{ background: rgba(29,95,179,0.08); }}
+  .recuadro-paciente[open] .recuadro-resumen {{ border-bottom: 1px solid #D7E3F7; }}
+  .recuadro-icono {{ font-size: 15px; }}
+  .recuadro-nombre {{ flex: 1; font-weight: 600; }}
+  .recuadro-boton {{
+    font-size: 11px; font-weight: 700; color: {BLUE}; background: {SURFACE};
+    border: 1px solid #D7E3F7; border-radius: 999px; padding: 4px 12px; white-space: nowrap;
+  }}
+  .recuadro-cuerpo {{ padding: 14px 16px; }}
+  .recuadro-datos {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 4px 16px; margin-bottom: 12px; }}
   .dato-fila {{ font-size: 12.5px; }}
   .dato-etiqueta {{ color: {GRAY}; margin-right: 6px; }}
   .dato-valor {{ color: {NAVY}; font-weight: 600; }}
-  .recuadro-documentos {{ display: flex; flex-wrap: wrap; gap: 10px; font-size: 12px; color: {NAVY}; border-top: 1px solid #D7E3F7; padding-top: 8px; }}
+  .recuadro-documentos {{ display: flex; flex-wrap: wrap; gap: 12px; border-top: 1px solid #D7E3F7; padding-top: 12px; }}
   .doc-fila-vacio {{ font-size: 12px; color: {GRAY}; }}
+  .doc-fila {{ font-size: 12px; color: {NAVY}; }}
+  .doc-miniatura {{ display: flex; flex-direction: column; align-items: center; gap: 4px; width: 108px; text-decoration: none; }}
+  .doc-miniatura img {{
+    width: 108px; height: 108px; object-fit: cover; border-radius: 8px; border: 1px solid #D7E3F7;
+    background: {SURFACE};
+  }}
+  .doc-miniatura-etiqueta {{ font-size: 10.5px; color: {NAVY}; text-align: center; line-height: 1.3; }}
 </style>
 </head>
 <body>

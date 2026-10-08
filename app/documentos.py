@@ -65,12 +65,13 @@ def ultima_orden_vigente(solicitud_id: int) -> Optional[bool]:
 
 def listar_por_solicitud(solicitud_id: int) -> list[dict]:
     """Todos los documentos registrados para esta solicitud (tipo, fecha detectada,
-    vigencia), en el orden en que llegaron — para mostrarlos en el recuadro de resumen
-    del paciente en el panel. No incluye los que no se pudieron clasificar."""
+    vigencia, storage_path), en el orden en que llegaron — para mostrarlos (con su
+    imagen) en el recuadro de resumen del paciente en el panel. No incluye los que no
+    se pudieron clasificar."""
     resp = (
         get_client()
         .table("documentos")
-        .select("tipo, fecha_detectada, vigente, creado_en")
+        .select("tipo, fecha_detectada, vigente, storage_path, creado_en")
         .eq("solicitud_id", solicitud_id)
         .order("creado_en")
         .execute()
