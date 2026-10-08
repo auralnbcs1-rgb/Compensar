@@ -202,3 +202,49 @@ def contar_por_estado() -> dict[str, int]:
     for row in resp.data:
         conteo[row["estado"]] = conteo.get(row["estado"], 0) + 1
     return conteo
+
+
+def contar_por_servicio() -> dict[str, int]:
+    """Cuántas solicitudes ha habido por trámite, histórico completo (abiertas y
+    cerradas, desde siempre) — para el dashboard de "cuántos necesitan cada servicio"."""
+    resp = get_client().table("solicitudes").select("servicio").execute()
+    conteo: dict[str, int] = {}
+    for row in resp.data:
+        conteo[row["servicio"]] = conteo.get(row["servicio"], 0) + 1
+    return conteo
+
+
+def contar_por_servicio_abiertas() -> dict[str, int]:
+    """Lo mismo que `contar_por_servicio`, pero solo entre las solicitudes que siguen
+    abiertas ahora mismo (ESTADOS_ABIERTOS) — el panorama actual, no el histórico."""
+    resp = (
+        get_client()
+        .table("solicitudes")
+        .select("servicio")
+        .in_("estado", list(ESTADOS_ABIERTOS))
+        .execute()
+    )
+    conteo: dict[str, int] = {}
+    for row in resp.data:
+        conteo[row["servicio"]] = conteo.get(row["servicio"], 0) + 1
+    return conteo
+
+
+# Estados en los que queda una solicitud una vez que un agente la gestiona desde el
+# panel (ver GESTION_DESTINO) — se usan para contar "cuántos se gestionan" por período.
+ESTADOS_GESTIONADOS = ("atendida", "agendada")
+
+
+def contar_gestionados_desde(desde_iso: str) -> int:
+    """Cuántas solicitudes quedaron gestionadas (atendida o agendada por un agente,
+    ver `marcar_gestionada`) desde esta fecha/hora en adelante (ISO, UTC) — para los
+    conteos de hoy/semana/mes del dashboard."""
+    resp = (
+        get_client()
+        .table("solicitudes")
+        .select("id", count="exact")
+        .in_("estado", list(ESTADOS_GESTIONADOS))
+        .gte("actualizado_en", desde_iso)
+        .execute()
+    )
+    return resp.count or 0

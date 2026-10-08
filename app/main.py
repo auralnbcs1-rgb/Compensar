@@ -2,7 +2,7 @@
 Colombia S.A.S.
 
 Flujo INBOUND: el paciente escribe primero. El primer mensaje siempre muestra el menú
-de los 5 trámites de Aurora. Según la opción elegida, el bot pide la cédula (si no la
+de los trámites de Aurora. Según la opción elegida, el bot pide la cédula (si no la
 conocemos ya por el backlog de entrega de audífonos) y los documentos que ese trámite
 necesita — orden clínica siempre; autorización de servicio y cédula además, para las
 opciones marcadas con * en el menú. Los documentos se clasifican y la vigencia de la
@@ -23,6 +23,7 @@ Endpoints:
 - POST /dashboard/chats/{telefono}/reanudar → un agente le devuelve el control a Aurora en ese chat
 - POST /dashboard/chats/{telefono}/observaciones → un agente guarda una nota del chat (y cierra el caso si aplica)
 - POST /dashboard/chats/{telefono}/gestionado     → un agente quita el color (naranja/azul) del chat con un solo clic
+- GET  /dashboard/completas               → recuadro completo de cada paciente con documentos completos
 
 Ejecutar en desarrollo:
     uvicorn app.main:app --reload --port 8000
@@ -36,7 +37,13 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from app import backlog, chat_media, conversaciones, documentos, mensajes, registro, session_store, solicitudes
 from app.claude_client import SolicitudContext, interpretar_seleccion_menu, next_turn
 from app.config import settings
-from app.dashboard import render_chat, render_dashboard, render_lista_chats, render_login
+from app.dashboard import (
+    render_chat,
+    render_dashboard,
+    render_lista_chats,
+    render_login,
+    render_solicitudes_completas,
+)
 from app.dashboard_auth import COOKIE_NAME, iniciar_sesion, validar_token
 from app.datos_paciente import CAMPOS
 from app.menu_matcher import coincidencia_local
@@ -454,7 +461,10 @@ def ver_chat(telefono: str, request: Request):
         return RedirectResponse(url="/dashboard/chats", status_code=status.HTTP_303_SEE_OTHER)
     historial = conversaciones.historial(telefono)
     solicitud = solicitudes.ultima_por_telefono(telefono)
-    return render_chat(conv, historial, email=email, solicitud=solicitud)
+    # Documentos de esa solicitud (si hay una) — para el recuadro de información
+    # completa del paciente que se muestra cuando ya tiene todo (ver render_chat).
+    documentos_lista = documentos.listar_por_solicitud(solicitud.id) if solicitud is not None else []
+    return render_chat(conv, historial, email=email, solicitud=solicitud, documentos_lista=documentos_lista)
 
 
 @app.post("/dashboard/chats/{telefono}/enviar")
@@ -550,6 +560,21 @@ def marcar_chat_gestionado(telefono: str, request: Request):
         observaciones_actuales = conv.notas if conv else ""
         solicitudes.marcar_gestionada(solicitud.id, email, estado_final, observaciones_actuales)
     return RedirectResponse(url=f"/dashboard/chats/{telefono}", status_code=status.HTTP_303_SEE_OTHER)
+
+
+# ---------------------------------------------------------------------------
+# Dashboard — solicitudes con documentos completos, cada una con su recuadro
+# completo de información, en una sola página (sin tener que entrar chat por chat).
+# ---------------------------------------------------------------------------
+
+@app.get("/dashboard/completas", response_class=HTMLResponse)
+def lista_completas(request: Request):
+    email = _dashboard_email(request)
+    if email is None:
+        return RedirectResponse(url="/login", status_code=status.HTTP_303_SEE_OTHER)
+    completas = solicitudes.listas_para_agente(limit=200)
+    items = [(s, documentos.listar_por_solicitud(s.id)) for s in completas]
+    return render_solicitudes_completas(items, email=email)
 
 
 # ---------------------------------------------------------------------------

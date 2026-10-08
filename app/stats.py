@@ -7,7 +7,7 @@ agente por fuera del bot. La meta de 70/día sigue siendo la referencia del nego
 aquí funciona como meta de CONFIRMACIONES que alimentan esa cola, no de citas cerradas.
 """
 from dataclasses import dataclass, field
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 
 from app import solicitudes as solicitudes_module
 from app.backlog import pendientes_count
@@ -35,9 +35,18 @@ class DashboardStats:
     ritmo_diario_promedio: float
     dias_para_vaciar_backlog: float | None  # None = sin datos suficientes para proyectar
     historial: list[tuple[str, int]]  # [(fecha_iso, confirmados_ese_dia), ...] orden ascendente
-    # Aurora: solicitudes de los 5 trámites (evaluación, prueba, tinnitus, control, terapia).
+    # Aurora: solicitudes de los 6 trámites (evaluación, prueba, control, tinnitus x2, mantenimiento).
     solicitudes_por_estado: dict[str, int] = field(default_factory=dict)
     listas_para_agente: list[SolicitudLista] = field(default_factory=list)
+    # Cuántas solicitudes ha habido por trámite — histórico completo y las que siguen
+    # abiertas ahora mismo (ambas claveadas por el código interno del servicio).
+    servicio_totales: dict[str, int] = field(default_factory=dict)
+    servicio_abiertas: dict[str, int] = field(default_factory=dict)
+    # Cuántas solicitudes quedaron gestionadas (atendida o agendada por un agente) en
+    # cada período — hoy, esta semana (desde el lunes), este mes.
+    gestionados_hoy: int = 0
+    gestionados_semana: int = 0
+    gestionados_mes: int = 0
 
 
 def _confirmados_en(desde: date, hasta: date) -> int:
@@ -92,6 +101,19 @@ def get_dashboard_stats() -> DashboardStats:
         for s in solicitudes_module.listas_para_agente(limit=20)
     ]
 
+    servicio_totales = solicitudes_module.contar_por_servicio()
+    servicio_abiertas = solicitudes_module.contar_por_servicio_abiertas()
+
+    # Límites de hoy/semana/mes en UTC — coherente con cómo se guarda `actualizado_en`
+    # (datetime.now(timezone.utc).isoformat() en solicitudes.marcar_gestionada).
+    inicio_dia = datetime.combine(hoy, datetime.min.time(), tzinfo=timezone.utc)
+    inicio_semana = inicio_dia - timedelta(days=hoy.weekday())  # lunes de esta semana
+    inicio_mes_dt = datetime.combine(inicio_mes, datetime.min.time(), tzinfo=timezone.utc)
+
+    gestionados_hoy = solicitudes_module.contar_gestionados_desde(inicio_dia.isoformat())
+    gestionados_semana = solicitudes_module.contar_gestionados_desde(inicio_semana.isoformat())
+    gestionados_mes = solicitudes_module.contar_gestionados_desde(inicio_mes_dt.isoformat())
+
     return DashboardStats(
         confirmados_hoy=_confirmados_en(hoy, hoy),
         meta_diaria=settings.daily_goal,
@@ -102,4 +124,9 @@ def get_dashboard_stats() -> DashboardStats:
         historial=historial,
         solicitudes_por_estado=solicitudes_por_estado,
         listas_para_agente=listas_para_agente,
+        servicio_totales=servicio_totales,
+        servicio_abiertas=servicio_abiertas,
+        gestionados_hoy=gestionados_hoy,
+        gestionados_semana=gestionados_semana,
+        gestionados_mes=gestionados_mes,
     )
