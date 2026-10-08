@@ -173,10 +173,6 @@ def render_dashboard(stats: DashboardStats, email: str = "") -> str:
         else "sin datos suficientes aún"
     )
 
-    tabla_filas = "".join(
-        f"<tr><td>{fecha}</td><td>{valor}</td></tr>" for fecha, valor in reversed(stats.historial)
-    )
-
     documentos_completos = stats.solicitudes_por_estado.get("documentos_completos", 0)
     pendiente_docs = stats.solicitudes_por_estado.get("pendiente_documentos", 0)
     orden_vencida = stats.solicitudes_por_estado.get("orden_vencida", 0)
@@ -293,10 +289,8 @@ def render_dashboard(stats: DashboardStats, email: str = "") -> str:
       <p class="subtitulo">Actualizado {date.today().isoformat()} · datos de Supabase, sin depender del Excel</p>
       <p class="subtitulo">Aurora recolecta documentos y confirma interés — el agente de atención al cliente cierra la cita (fecha/hora) por fuera del bot.</p>
 
-      <div class="seccion-titulo">Confirmaciones</div>
+      <div class="seccion-titulo">Backlog</div>
       <div class="tiles">
-        {_tile("Confirmados hoy", str(stats.confirmados_hoy), color=TEAL, icono="🎯")}
-        {_tile("Confirmados este mes", str(stats.confirmados_mes), color=TEAL, icono="📈")}
         {_tile("Pendientes en backlog", str(stats.pendientes), color=NAVY, chip=DORADO, icono="📋")}
         {_tile("Backlog se vacía en", proyeccion, f"ritmo: {stats.ritmo_diario_promedio}/día", color=NAVY, chip=TURQUESA, icono="⏳")}
       </div>
@@ -335,18 +329,6 @@ def render_dashboard(stats: DashboardStats, email: str = "") -> str:
           hace falta, el paciente aparece aquí.
         </p>
         {filas_azules}
-      </div>
-
-      <div class="panel panel-teal">
-        <h2>Confirmados por día (últimos {len(stats.historial)} días)</h2>
-        {_bar_chart_svg(stats)}
-        <details>
-          <summary>Ver como tabla</summary>
-          <table>
-            <tr><td><strong>Fecha</strong></td><td><strong>Confirmados</strong></td></tr>
-            {tabla_filas}
-          </table>
-        </details>
       </div>
 
       <footer>Aurora — Compensar / Widex Colombia S.A.S. Proyecto independiente, base de datos propia en Supabase.</footer>
