@@ -209,19 +209,40 @@ def render_dashboard(stats: DashboardStats, email: str = "") -> str:
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Dashboard — Aurora (Compensar)</title>
+<title>Reportes — Aurora (Compensar)</title>
 <style>
   :root {{ color-scheme: light; }}
+  * {{ box-sizing: border-box; }}
+  html, body {{ height: 100%; }}
   body {{
-    margin: 0; padding: 32px 24px 64px; background: {SURFACE};
-    font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-    color: {NAVY};
+    margin: 0; background: {SURFACE};
+    font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; color: {NAVY};
   }}
-  h1 {{ font-size: 22px; margin: 0 0 4px; }}
+  .layout {{ display: flex; min-height: 100vh; }}
+  .sidebar {{
+    width: 76px; flex: none; background: {NAVY}; display: flex; flex-direction: column;
+    align-items: center; padding: 16px 0;
+  }}
+  .sb-logo {{
+    width: 34px; height: 34px; border-radius: 8px; background: {TEAL}; color: {SURFACE};
+    display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 15px;
+    margin-bottom: 28px;
+  }}
+  .sb-nav {{ display: flex; flex-direction: column; gap: 4px; flex: 1; width: 100%; }}
+  .sb-item {{
+    display: block; text-align: center; color: #B7C2D4; text-decoration: none; font-size: 11px;
+    padding: 10px 4px; margin: 0 8px; border-radius: 8px;
+  }}
+  .sb-item:hover {{ background: rgba(255,255,255,0.08); color: {SURFACE}; }}
+  .sb-activo {{ background: rgba(255,255,255,0.14); color: {SURFACE}; font-weight: 600; }}
+  .sb-salir {{ color: #8592A6; }}
+
+  .reportes-col {{ flex: 1; min-width: 0; overflow-y: auto; padding: 28px 32px 64px; }}
   .franja-top {{
-    height: 6px; border-radius: 6px; margin: -32px -24px 24px;
+    height: 6px; border-radius: 6px; margin: -28px -32px 24px;
     background: linear-gradient(90deg, {NAVY} 0%, {TEAL} 45%, {TURQUESA} 75%, {DORADO} 100%);
   }}
+  h1 {{ font-size: 22px; margin: 0 0 4px; }}
   .subtitulo {{ color: {GRAY}; font-size: 13px; margin: 0 0 28px; }}
   .tiles {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 16px; margin-bottom: 20px; max-width: 980px; }}
   .tile {{
@@ -271,72 +292,76 @@ def render_dashboard(stats: DashboardStats, email: str = "") -> str:
 </style>
 </head>
 <body>
-  <div class="franja-top"></div>
-  <div style="display:flex; justify-content:space-between; align-items:flex-start;">
-    <h1>Aurora — Compensar / Widex Colombia S.A.S.</h1>
-    {f'<div style="font-size:12px; color:{GRAY};">{email} · <a href="/logout" style="color:{GRAY};">cerrar sesión</a></div>' if email else ""}
-  </div>
-  <p class="subtitulo">Actualizado {date.today().isoformat()} · datos de Supabase, sin depender del Excel</p>
-  <p class="subtitulo">Aurora recolecta documentos y confirma interés — el agente de atención al cliente cierra la cita (fecha/hora) por fuera del bot.</p>
-  <p class="subtitulo"><a href="/dashboard/chats" style="color:{NAVY}; font-weight:600;">Ver conversaciones →</a> · <a href="/dashboard/completas" style="color:{NAVY}; font-weight:600;">Ver solicitudes completas →</a></p>
+  <div class="layout">
+    {_sidebar("reportes", email)}
+    <div class="reportes-col">
+      <div class="franja-top"></div>
+      <div style="display:flex; justify-content:space-between; align-items:flex-start;">
+        <h1>Aurora — Compensar / Widex Colombia S.A.S.</h1>
+        {f'<div style="font-size:12px; color:{GRAY};">{email} · <a href="/logout" style="color:{GRAY};">cerrar sesión</a></div>' if email else ""}
+      </div>
+      <p class="subtitulo">Actualizado {date.today().isoformat()} · datos de Supabase, sin depender del Excel</p>
+      <p class="subtitulo">Aurora recolecta documentos y confirma interés — el agente de atención al cliente cierra la cita (fecha/hora) por fuera del bot.</p>
 
-  <div class="seccion-titulo">Confirmaciones</div>
-  <div class="tiles">
-    {_tile("Confirmados hoy", f"{stats.confirmados_hoy} / {stats.meta_diaria}", "meta diaria de confirmaciones", color_hoy, icono="🎯")}
-    {_tile("Confirmados este mes", str(stats.confirmados_mes), color=TEAL, icono="📈")}
-    {_tile("Pendientes en backlog", str(stats.pendientes), color=NAVY, chip=DORADO, icono="📋")}
-    {_tile("Backlog se vacía en", proyeccion, f"ritmo: {stats.ritmo_diario_promedio}/día", color=NAVY, chip=TURQUESA, icono="⏳")}
-  </div>
+      <div class="seccion-titulo">Confirmaciones</div>
+      <div class="tiles">
+        {_tile("Confirmados hoy", f"{stats.confirmados_hoy} / {stats.meta_diaria}", "meta diaria de confirmaciones", color_hoy, icono="🎯")}
+        {_tile("Confirmados este mes", str(stats.confirmados_mes), color=TEAL, icono="📈")}
+        {_tile("Pendientes en backlog", str(stats.pendientes), color=NAVY, chip=DORADO, icono="📋")}
+        {_tile("Backlog se vacía en", proyeccion, f"ritmo: {stats.ritmo_diario_promedio}/día", color=NAVY, chip=TURQUESA, icono="⏳")}
+      </div>
 
-  <div class="seccion-titulo">Documentos</div>
-  <div class="tiles">
-    {_tile("Documentos completos", str(documentos_completos), "listos para el agente", BLUE, icono="✅")}
-    {_tile("Esperando documentos", str(pendiente_docs), color=NAVY, chip=TURQUESA, icono="⏱")}
-    {_tile("Orden vencida", str(orden_vencida), "hay que pedir una nueva", ORANGE, icono="⚠️")}
-  </div>
+      <div class="seccion-titulo">Documentos</div>
+      <div class="tiles">
+        {_tile("Documentos completos", str(documentos_completos), "listos para el agente", BLUE, icono="✅")}
+        {_tile("Esperando documentos", str(pendiente_docs), color=NAVY, chip=TURQUESA, icono="⏱")}
+        {_tile("Orden vencida", str(orden_vencida), "hay que pedir una nueva", ORANGE, icono="⚠️")}
+      </div>
 
-  <div class="seccion-titulo">Gestionados (atendidos + agendados)</div>
-  <div class="tiles">
-    {_tile("Hoy", str(stats.gestionados_hoy), color=GOOD, chip=DORADO, icono="✔️")}
-    {_tile("Esta semana", str(stats.gestionados_semana), color=TEAL, chip=TURQUESA, icono="📅")}
-    {_tile("Este mes", str(stats.gestionados_mes), color=NAVY, chip=BEIGE, icono="🗓")}
-  </div>
+      <div class="seccion-titulo">Gestionados (atendidos + agendados)</div>
+      <div class="tiles">
+        {_tile("Hoy", str(stats.gestionados_hoy), color=GOOD, chip=DORADO, icono="✔️")}
+        {_tile("Esta semana", str(stats.gestionados_semana), color=TEAL, chip=TURQUESA, icono="📅")}
+        {_tile("Este mes", str(stats.gestionados_mes), color=NAVY, chip=BEIGE, icono="🗓")}
+      </div>
 
-  <div class="panel panel-navy">
-    <h2>Solicitudes por trámite</h2>
-    <p class="panel-nota">
-      "Histórico" cuenta todas las solicitudes que ha habido de ese trámite desde siempre
-      (abiertas y cerradas). "Abiertas" son las que siguen en curso ahora mismo.
-    </p>
-    <table class="tabla-tramites">
-      <tr><td>Trámite</td><td>Histórico</td><td>Abiertas</td></tr>
-      {filas_servicio}
-    </table>
-  </div>
+      <div class="panel">
+        <h2>Solicitudes por trámite</h2>
+        <p class="panel-nota">
+          "Histórico" cuenta todas las solicitudes que ha habido de ese trámite desde siempre
+          (abiertas y cerradas). "Abiertas" son las que siguen en curso ahora mismo.
+        </p>
+        <table class="tabla-tramites">
+          <tr><td>Trámite</td><td>Histórico</td><td>Abiertas</td></tr>
+          {filas_servicio}
+        </table>
+      </div>
 
-  <div class="panel panel-blue">
-    <h2>Listos para el agente (documentos completos)</h2>
-    <p class="panel-nota">
-      WhatsApp Cloud API no deja que el bot ponga la etiqueta de color nativa de WhatsApp
-      Business — esta franja azul es el equivalente: en cuanto Aurora recibe todo lo que
-      hace falta, el paciente aparece aquí.
-    </p>
-    {filas_azules}
-  </div>
+      <div class="panel panel-blue">
+        <h2>Listos para el agente (documentos completos)</h2>
+        <p class="panel-nota">
+          WhatsApp Cloud API no deja que el bot ponga la etiqueta de color nativa de WhatsApp
+          Business — esta franja azul es el equivalente: en cuanto Aurora recibe todo lo que
+          hace falta, el paciente aparece aquí.
+        </p>
+        {filas_azules}
+      </div>
 
-  <div class="panel panel-teal">
-    <h2>Confirmados por día (últimos {len(stats.historial)} días) vs. meta</h2>
-    {_bar_chart_svg(stats)}
-    <details>
-      <summary>Ver como tabla</summary>
-      <table>
-        <tr><td><strong>Fecha</strong></td><td><strong>Confirmados</strong></td></tr>
-        {tabla_filas}
-      </table>
-    </details>
-  </div>
+      <div class="panel panel-teal">
+        <h2>Confirmados por día (últimos {len(stats.historial)} días) vs. meta</h2>
+        {_bar_chart_svg(stats)}
+        <details>
+          <summary>Ver como tabla</summary>
+          <table>
+            <tr><td><strong>Fecha</strong></td><td><strong>Confirmados</strong></td></tr>
+            {tabla_filas}
+          </table>
+        </details>
+      </div>
 
-  <footer>Aurora — Compensar / Widex Colombia S.A.S. Proyecto independiente, base de datos propia en Supabase.</footer>
+      <footer>Aurora — Compensar / Widex Colombia S.A.S. Proyecto independiente, base de datos propia en Supabase.</footer>
+    </div>
+  </div>
 </body>
 </html>"""
 
