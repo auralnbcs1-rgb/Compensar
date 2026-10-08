@@ -27,6 +27,10 @@ ORANGE = "#B5590B"      # requiere asesor — Aurora no pudo resolverlo (franja 
 SURFACE = "#FFFFFF"
 MUTED_GRID = "#E4E4E4"
 
+TURQUESA = "#8ED5DE"    # complementario — acentos decorativos (chips, franjas suaves)
+DORADO = "#F5C753"      # complementario — acentos decorativos (chips, franjas suaves)
+BEIGE = "#CAC1B0"       # complementario — fondos suaves, franjas de tabla
+
 # Logo corporativo Aural + Widex — login y encabezado del panel de chats (PNG con
 # fondo transparente, generado a partir del logo oficial; no se sirve desde archivo
 # estático aparte para no depender de nada fuera de este único servicio de Railway).
@@ -93,10 +97,14 @@ def _bar_chart_svg(stats: DashboardStats) -> str:
     )
 
 
-def _tile(titulo: str, valor: str, nota: str = "", color: str = NAVY) -> str:
+def _tile(titulo: str, valor: str, nota: str = "", color: str = NAVY, chip: str = "", icono: str = "") -> str:
+    chip_color = chip or color
     return f"""
-    <div class="tile">
-      <div class="tile-titulo">{titulo}</div>
+    <div class="tile" style="border-top-color:{color};">
+      <div class="tile-cabeza">
+        <div class="tile-dot" style="background:{chip_color}26; color:{chip_color};">{icono or "●"}</div>
+        <div class="tile-titulo">{titulo}</div>
+      </div>
       <div class="tile-valor" style="color:{color}">{valor}</div>
       {f'<div class="tile-nota">{nota}</div>' if nota else ""}
     </div>"""
@@ -164,7 +172,7 @@ def _fila_lista_azul(nombre: str, cedula: str, servicio_nombre: str, telefono: s
 
 
 def _fila_servicio(nombre: str, total: int, abiertas: int) -> str:
-    return f"<tr><td>{html.escape(nombre)}</td><td>{total}</td><td>{abiertas}</td></tr>"
+    return f"<tr><td>{html.escape(nombre)}</td><td><strong>{total}</strong></td><td>{abiertas}</td></tr>"
 
 
 def render_dashboard(stats: DashboardStats, email: str = "") -> str:
@@ -210,18 +218,46 @@ def render_dashboard(stats: DashboardStats, email: str = "") -> str:
     color: {NAVY};
   }}
   h1 {{ font-size: 22px; margin: 0 0 4px; }}
+  .franja-top {{
+    height: 6px; border-radius: 6px; margin: -32px -24px 24px;
+    background: linear-gradient(90deg, {NAVY} 0%, {TEAL} 45%, {TURQUESA} 75%, {DORADO} 100%);
+  }}
   .subtitulo {{ color: {GRAY}; font-size: 13px; margin: 0 0 28px; }}
-  .tiles {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 16px; margin-bottom: 32px; max-width: 960px; }}
-  .tile {{ border: 1px solid {MUTED_GRID}; border-radius: 10px; padding: 16px 18px; }}
-  .tile-titulo {{ font-size: 12px; color: {GRAY}; margin-bottom: 6px; }}
+  .tiles {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 16px; margin-bottom: 20px; max-width: 980px; }}
+  .tile {{
+    border: 1px solid {MUTED_GRID}; border-top: 4px solid {NAVY}; border-radius: 10px; padding: 16px 18px;
+    background: {SURFACE}; box-shadow: 0 1px 2px rgba(4,30,66,0.04);
+  }}
+  .tile-cabeza {{ display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }}
+  .tile-dot {{
+    width: 26px; height: 26px; border-radius: 50%; display: flex; align-items: center; justify-content: center;
+    font-size: 13px; flex: none;
+  }}
+  .tile-titulo {{ font-size: 12px; color: {GRAY}; }}
   .tile-valor {{ font-size: 28px; font-weight: 700; line-height: 1.1; }}
   .tile-nota {{ font-size: 12px; color: {GRAY}; margin-top: 4px; }}
-  .panel {{ max-width: 700px; border: 1px solid {MUTED_GRID}; border-radius: 10px; padding: 20px; margin-bottom: 24px; }}
+  .seccion-titulo {{
+    font-size: 12px; font-weight: 700; color: {GRAY}; text-transform: uppercase; letter-spacing: 0.04em;
+    margin: 28px 0 10px; max-width: 980px;
+  }}
+  .panel {{
+    max-width: 700px; border: 1px solid {MUTED_GRID}; border-left: 5px solid {NAVY}; border-radius: 10px;
+    padding: 20px; margin-bottom: 24px; background: {SURFACE};
+  }}
+  .panel-teal {{ border-left-color: {TEAL}; }}
+  .panel-blue {{ border-left-color: {BLUE}; }}
+  .panel-dorado {{ border-left-color: {DORADO}; }}
   .panel h2 {{ font-size: 14px; margin: 0 0 4px; }}
   .panel-nota {{ font-size: 12px; color: {GRAY}; margin: 0 0 14px; }}
   details {{ margin-top: 14px; font-size: 13px; color: {GRAY}; }}
-  table {{ border-collapse: collapse; font-size: 13px; margin-top: 8px; }}
-  td {{ padding: 3px 12px 3px 0; }}
+  table {{ border-collapse: collapse; font-size: 13px; margin-top: 8px; width: 100%; }}
+  td {{ padding: 6px 12px 6px 0; }}
+  table.tabla-tramites {{ border-radius: 8px; overflow: hidden; }}
+  table.tabla-tramites tr:first-child td {{
+    background: {NAVY}; color: {SURFACE}; font-weight: 700; padding: 8px 12px;
+  }}
+  table.tabla-tramites tr:not(:first-child):nth-child(even) td {{ background: {BEIGE}26; }}
+  table.tabla-tramites tr:not(:first-child) td {{ padding: 8px 12px; }}
   .fila-azul {{
     border-left: 4px solid {BLUE}; background: #EEF3FC; border-radius: 0 6px 6px 0;
     padding: 8px 12px; margin-bottom: 8px;
@@ -235,6 +271,7 @@ def render_dashboard(stats: DashboardStats, email: str = "") -> str:
 </style>
 </head>
 <body>
+  <div class="franja-top"></div>
   <div style="display:flex; justify-content:space-between; align-items:flex-start;">
     <h1>Aurora — Compensar / Widex Colombia S.A.S.</h1>
     {f'<div style="font-size:12px; color:{GRAY};">{email} · <a href="/logout" style="color:{GRAY};">cerrar sesión</a></div>' if email else ""}
@@ -243,38 +280,41 @@ def render_dashboard(stats: DashboardStats, email: str = "") -> str:
   <p class="subtitulo">Aurora recolecta documentos y confirma interés — el agente de atención al cliente cierra la cita (fecha/hora) por fuera del bot.</p>
   <p class="subtitulo"><a href="/dashboard/chats" style="color:{NAVY}; font-weight:600;">Ver conversaciones →</a> · <a href="/dashboard/completas" style="color:{NAVY}; font-weight:600;">Ver solicitudes completas →</a></p>
 
+  <div class="seccion-titulo">Confirmaciones</div>
   <div class="tiles">
-    {_tile("Confirmados hoy", f"{stats.confirmados_hoy} / {stats.meta_diaria}", "meta diaria de confirmaciones", color_hoy)}
-    {_tile("Confirmados este mes", str(stats.confirmados_mes))}
-    {_tile("Pendientes en backlog", str(stats.pendientes))}
-    {_tile("Backlog se vacía en", proyeccion, f"ritmo: {stats.ritmo_diario_promedio}/día")}
+    {_tile("Confirmados hoy", f"{stats.confirmados_hoy} / {stats.meta_diaria}", "meta diaria de confirmaciones", color_hoy, icono="🎯")}
+    {_tile("Confirmados este mes", str(stats.confirmados_mes), color=TEAL, icono="📈")}
+    {_tile("Pendientes en backlog", str(stats.pendientes), color=NAVY, chip=DORADO, icono="📋")}
+    {_tile("Backlog se vacía en", proyeccion, f"ritmo: {stats.ritmo_diario_promedio}/día", color=NAVY, chip=TURQUESA, icono="⏳")}
   </div>
 
+  <div class="seccion-titulo">Documentos</div>
   <div class="tiles">
-    {_tile("Documentos completos", str(documentos_completos), "listos para el agente", BLUE)}
-    {_tile("Esperando documentos", str(pendiente_docs))}
-    {_tile("Orden vencida", str(orden_vencida), "hay que pedir una nueva")}
+    {_tile("Documentos completos", str(documentos_completos), "listos para el agente", BLUE, icono="✅")}
+    {_tile("Esperando documentos", str(pendiente_docs), color=NAVY, chip=TURQUESA, icono="⏱")}
+    {_tile("Orden vencida", str(orden_vencida), "hay que pedir una nueva", ORANGE, icono="⚠️")}
   </div>
 
+  <div class="seccion-titulo">Gestionados (atendidos + agendados)</div>
   <div class="tiles">
-    {_tile("Gestionados hoy", str(stats.gestionados_hoy), "atendidos + agendados", GOOD)}
-    {_tile("Gestionados esta semana", str(stats.gestionados_semana))}
-    {_tile("Gestionados este mes", str(stats.gestionados_mes))}
+    {_tile("Hoy", str(stats.gestionados_hoy), color=GOOD, chip=DORADO, icono="✔️")}
+    {_tile("Esta semana", str(stats.gestionados_semana), color=TEAL, chip=TURQUESA, icono="📅")}
+    {_tile("Este mes", str(stats.gestionados_mes), color=NAVY, chip=BEIGE, icono="🗓")}
   </div>
 
-  <div class="panel">
+  <div class="panel panel-navy">
     <h2>Solicitudes por trámite</h2>
     <p class="panel-nota">
       "Histórico" cuenta todas las solicitudes que ha habido de ese trámite desde siempre
       (abiertas y cerradas). "Abiertas" son las que siguen en curso ahora mismo.
     </p>
-    <table>
-      <tr><td><strong>Trámite</strong></td><td><strong>Histórico</strong></td><td><strong>Abiertas</strong></td></tr>
+    <table class="tabla-tramites">
+      <tr><td>Trámite</td><td>Histórico</td><td>Abiertas</td></tr>
       {filas_servicio}
     </table>
   </div>
 
-  <div class="panel">
+  <div class="panel panel-blue">
     <h2>Listos para el agente (documentos completos)</h2>
     <p class="panel-nota">
       WhatsApp Cloud API no deja que el bot ponga la etiqueta de color nativa de WhatsApp
@@ -284,7 +324,7 @@ def render_dashboard(stats: DashboardStats, email: str = "") -> str:
     {filas_azules}
   </div>
 
-  <div class="panel">
+  <div class="panel panel-teal">
     <h2>Confirmados por día (últimos {len(stats.historial)} días) vs. meta</h2>
     {_bar_chart_svg(stats)}
     <details>
