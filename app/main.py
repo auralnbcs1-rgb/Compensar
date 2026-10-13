@@ -34,7 +34,7 @@ import re
 from fastapi import FastAPI, File, Form, Request, Response, UploadFile, status
 from fastapi.responses import HTMLResponse, RedirectResponse
 
-from app import backlog, chat_media, conversaciones, documentos, mensajes, registro, session_store, solicitudes
+from app import backlog, chat_media, conversaciones, documentos, mensajes, presencia, registro, session_store, solicitudes
 from app.claude_client import SolicitudContext, interpretar_seleccion_menu, next_turn
 from app.config import settings
 from app.dashboard import (
@@ -403,6 +403,17 @@ def logout():
     respuesta = RedirectResponse(url="/login", status_code=status.HTTP_303_SEE_OTHER)
     respuesta.delete_cookie(COOKIE_NAME)
     return respuesta
+
+
+@app.post("/dashboard/heartbeat")
+def dashboard_heartbeat(request: Request):
+    # Lo llama un <script> en cada página del panel cada 30 segundos (ver dashboard.py)
+    # para que la barra lateral pueda mostrar quién está conectado ahora mismo.
+    email = _dashboard_email(request)
+    if email is None:
+        return Response(status_code=status.HTTP_401_UNAUTHORIZED)
+    presencia.marcar_activo(email)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @app.get("/dashboard", response_class=HTMLResponse)

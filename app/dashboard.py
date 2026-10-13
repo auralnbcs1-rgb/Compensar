@@ -221,6 +221,11 @@ def render_dashboard(stats: DashboardStats, email: str = "") -> str:
   }}
   .sb-item:hover {{ background: rgba(255,255,255,0.08); color: {SURFACE}; }}
   .sb-activo {{ background: rgba(255,255,255,0.14); color: {SURFACE}; font-weight: 600; }}
+  .sb-conectados {{
+    display: flex; align-items: center; justify-content: center; gap: 4px; margin-bottom: 10px;
+    font-size: 11px; color: #B7C2D4;
+  }}
+  .sb-conectados-punto {{ width: 7px; height: 7px; border-radius: 50%; background: {GOOD}; display: inline-block; }}
   .sb-salir {{ color: #8592A6; }}
 
   .reportes-col {{ flex: 1; min-width: 0; overflow-y: auto; padding: 28px 32px 64px; }}
@@ -334,6 +339,15 @@ def render_dashboard(stats: DashboardStats, email: str = "") -> str:
       <footer>Aurora — Compensar / Widex Colombia S.A.S. Proyecto independiente, base de datos propia en Supabase.</footer>
     </div>
   </div>
+  <script>
+    (function () {{
+      function heartbeat() {{
+        fetch("/dashboard/heartbeat", {{ method: "POST", credentials: "same-origin" }}).catch(function () {{}});
+      }}
+      heartbeat();
+      setInterval(heartbeat, 30000);
+    }})();
+  </script>
 </body>
 </html>"""
 
@@ -355,10 +369,23 @@ def _avatar(telefono: str) -> str:
 def _sidebar(activo: str, email: str) -> str:
     """Barra lateral de navegación — inspirada en el panel de Amanda (Chats / Salir).
     Incluye Chats, Completas (recuadro de cada paciente con documentos completos) y
-    Reportes (confirmaciones, trámites por volumen, gestionados por período)."""
+    Reportes (confirmaciones, trámites por volumen, gestionados por período). También
+    muestra cuántos agentes tienen el panel abierto ahora mismo (ver app/presencia.py)."""
     def item(href: str, etiqueta: str, clave: str) -> str:
         activo_cls = " sb-activo" if clave == activo else ""
         return f'<a class="sb-item{activo_cls}" href="{href}">{etiqueta}</a>'
+
+    # import diferido: mismo patrón que chat_media, para no arriesgar un ciclo de
+    # imports; y si Supabase falla acá, listar_conectados() ya devuelve [] por su cuenta.
+    from app.presencia import listar_conectados
+    conectados = listar_conectados()
+    if conectados:
+        conectados_html = f"""
+    <div class="sb-conectados" title="Conectado(s) ahora: {html.escape(", ".join(conectados))}">
+      <span class="sb-conectados-punto"></span>{len(conectados)}
+    </div>"""
+    else:
+        conectados_html = ""
 
     return f"""
   <nav class="sidebar">
@@ -368,6 +395,7 @@ def _sidebar(activo: str, email: str) -> str:
       {item("/dashboard/completas", "Completas", "completas")}
       {item("/dashboard/reportes", "Reportes", "reportes")}
     </div>
+    {conectados_html}
     <a class="sb-item sb-salir" href="/logout" title="{html.escape(email)}">Salir</a>
   </nav>"""
 
@@ -466,6 +494,11 @@ def render_lista_chats(
   }}
   .sb-item:hover {{ background: rgba(255,255,255,0.08); color: {SURFACE}; }}
   .sb-activo {{ background: rgba(255,255,255,0.14); color: {SURFACE}; font-weight: 600; }}
+  .sb-conectados {{
+    display: flex; align-items: center; justify-content: center; gap: 4px; margin-bottom: 10px;
+    font-size: 11px; color: #B7C2D4;
+  }}
+  .sb-conectados-punto {{ width: 7px; height: 7px; border-radius: 50%; background: {GOOD}; display: inline-block; }}
   .sb-salir {{ color: #8592A6; }}
 
   .lista-col {{
@@ -543,6 +576,15 @@ def render_lista_chats(
       <iframe name="chatframe" src="{_PLACEHOLDER_IFRAME}" title="Conversación"></iframe>
     </div>
   </div>
+  <script>
+    (function () {{
+      function heartbeat() {{
+        fetch("/dashboard/heartbeat", {{ method: "POST", credentials: "same-origin" }}).catch(function () {{}});
+      }}
+      heartbeat();
+      setInterval(heartbeat, 30000);
+    }})();
+  </script>
 </body>
 </html>"""
 
@@ -982,6 +1024,11 @@ def render_solicitudes_completas(items: list[tuple[Solicitud, list[dict]]], emai
   }}
   .sb-item:hover {{ background: rgba(255,255,255,0.08); color: {SURFACE}; }}
   .sb-activo {{ background: rgba(255,255,255,0.14); color: {SURFACE}; font-weight: 600; }}
+  .sb-conectados {{
+    display: flex; align-items: center; justify-content: center; gap: 4px; margin-bottom: 10px;
+    font-size: 11px; color: #B7C2D4;
+  }}
+  .sb-conectados-punto {{ width: 7px; height: 7px; border-radius: 50%; background: {GOOD}; display: inline-block; }}
   .sb-salir {{ color: #8592A6; }}
 
   .completas-col {{ flex: 1; min-width: 0; padding: 28px 32px 64px; max-width: 760px; }}
@@ -1031,5 +1078,14 @@ def render_solicitudes_completas(items: list[tuple[Solicitud, list[dict]]], emai
       {tarjetas}
     </div>
   </div>
+  <script>
+    (function () {{
+      function heartbeat() {{
+        fetch("/dashboard/heartbeat", {{ method: "POST", credentials: "same-origin" }}).catch(function () {{}});
+      }}
+      heartbeat();
+      setInterval(heartbeat, 30000);
+    }})();
+  </script>
 </body>
 </html>"""
