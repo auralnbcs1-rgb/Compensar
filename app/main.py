@@ -455,11 +455,16 @@ def lista_chats(request: Request, q: str = "", estado: str = "todas"):
     # resolver algo (o el paciente pidió un asesor) y el chat necesita que un agente lo
     # atienda directamente.
     naranjas = {s.telefono for s in solicitudes.requieren_asesor(limit=500)}
+    # Ya gestionados (atendida/agendada) — dejan de pintarse de color y solo aparecen
+    # bajo el filtro "Gestionados" del panel.
+    gestionados = {s.telefono for s in solicitudes.gestionadas(limit=500)}
     logger.warning(
-        "lista_chats: estado=%r chats=%d listos=%r naranjas=%r",
-        estado, len(chats), listos, naranjas,
+        "lista_chats: estado=%r chats=%d listos=%r naranjas=%r gestionados=%r",
+        estado, len(chats), listos, naranjas, gestionados,
     )
-    return render_lista_chats(chats, email=email, busqueda=q, estado=estado, listos=listos, naranjas=naranjas)
+    return render_lista_chats(
+        chats, email=email, busqueda=q, estado=estado, listos=listos, naranjas=naranjas, gestionados=gestionados,
+    )
 
 
 @app.get("/dashboard/chats/{telefono}", response_class=HTMLResponse)

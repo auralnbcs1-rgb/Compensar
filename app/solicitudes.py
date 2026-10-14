@@ -5,7 +5,7 @@ siendo solo el backlog de entrega de audífonos de Compensar (ver
 `_sincronizar_backlog_si_aplica` en main.py para cómo se cruzan cuando aplica).
 """
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from app.db import get_client
@@ -49,6 +49,7 @@ class Solicitud:
     correo: str = ""
     atendido_por: str = ""
     observaciones: str = ""
+    actualizado_en: str = ""
 
 
 def _row_to_solicitud(row: dict) -> Solicitud:
@@ -67,6 +68,7 @@ def _row_to_solicitud(row: dict) -> Solicitud:
         correo=row.get("correo") or "",
         atendido_por=row.get("atendido_por") or "",
         observaciones=row.get("observaciones") or "",
+        actualizado_en=row.get("actualizado_en") or "",
     )
 
 
@@ -248,3 +250,37 @@ def contar_gestionados_desde(desde_iso: str) -> int:
         .execute()
     )
     return resp.count or 0
+
+
+def gestionadas(limit: int = 50) -> list[Solicitud]:
+    """Solicitudes ya gestionadas por un agente (atendida o agendada, ver
+    `marcar_gestionada`) — para el filtro "Gestionados" del panel de chats, separado
+    de las que siguen con franja de color (naranja/azul)."""
+    resp = (
+        get_client()
+        .table("solicitudes")
+        .select("*")
+        .in_("estado", list(ESTADOS_GESTIONADOS))
+        .order("actualizado_en", desc=True)
+        .limit(limit)
+        .execute()
+    )
+    return [_row_to_solicitud(row) for row in resp.data]
+
+
+def esperando_documentos_demorados(horas: int = 72, limit: int = 100) -> list[Solicitud]:
+    """Solicitudes en 'pendiente_documentos' que llevan más de `horas` sin que el
+    paciente mande nada nuevo (actualizado_en no se mueve) — los casos que se están
+    quedando atrás esperando documentos, para el panel de Reportes."""
+    limite = datetime.now(timezone.utc) - timedelta(hours=horas)
+    resp = (
+        get_client()
+        .table("solicitudes")
+        .select("*")
+        .eq("estado", "pendiente_documentos")
+        .lte("actualizado_en", limite.isoformat())
+        .order("actualizado_en")
+        .limit(limit)
+        .execute()
+    )
+    return [_row_to_solicitud(row) for row in resp.data]

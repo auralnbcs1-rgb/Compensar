@@ -166,6 +166,16 @@ def _fila_servicio(nombre: str, total: int, abiertas: int) -> str:
     return f"<tr><td>{html.escape(nombre)}</td><td><strong>{total}</strong></td><td>{abiertas}</td></tr>"
 
 
+def _fila_demorada(nombre: str, cedula: str, servicio_nombre: str, telefono: str, dias_esperando: int) -> str:
+    dias_txt = "1 día" if dias_esperando == 1 else f"{dias_esperando} días"
+    return f"""
+    <div class="fila-demorada">
+      <div class="fila-demorada-nombre">{nombre} <span class="fila-demorada-cedula">· CC {cedula}</span></div>
+      <div class="fila-demorada-servicio">{servicio_nombre}</div>
+      <div class="fila-demorada-detalle">{telefono} · esperando hace {dias_txt}</div>
+    </div>"""
+
+
 def render_dashboard(stats: DashboardStats, email: str = "") -> str:
     proyeccion = (
         f"{int(stats.dias_para_vaciar_backlog)} días al ritmo actual"
@@ -183,6 +193,13 @@ def render_dashboard(stats: DashboardStats, email: str = "") -> str:
     )
     if not filas_azules:
         filas_azules = '<p class="fila-azul-vacio">Todavía no hay ninguna solicitud con documentos completos.</p>'
+
+    filas_demoradas = "".join(
+        _fila_demorada(s.nombre, s.cedula, s.servicio_nombre, s.telefono, s.dias_esperando)
+        for s in stats.esperando_documentos
+    )
+    if not filas_demoradas:
+        filas_demoradas = '<p class="fila-azul-vacio">Ninguno — todos los que están esperando documentos llevan menos de 72 horas.</p>'
 
     # Por trámite: histórico completo (desde siempre) vs. las que siguen abiertas ahora.
     filas_servicio = "".join(
@@ -279,6 +296,14 @@ def render_dashboard(stats: DashboardStats, email: str = "") -> str:
   .fila-azul-servicio {{ font-size: 12px; color: {BLUE}; margin-top: 2px; }}
   .fila-azul-detalle {{ font-size: 12px; color: {GRAY}; margin-top: 2px; }}
   .fila-azul-vacio {{ font-size: 13px; color: {GRAY}; }}
+  .fila-demorada {{
+    border-left: 4px solid {DORADO}; background: #FDF6E3; border-radius: 0 6px 6px 0;
+    padding: 8px 12px; margin-bottom: 8px;
+  }}
+  .fila-demorada-nombre {{ font-size: 13px; font-weight: 600; color: {NAVY}; }}
+  .fila-demorada-cedula {{ font-weight: 400; color: {GRAY}; }}
+  .fila-demorada-servicio {{ font-size: 12px; color: {GRAY}; margin-top: 2px; }}
+  .fila-demorada-detalle {{ font-size: 12px; color: {ORANGE}; margin-top: 2px; font-weight: 600; }}
   footer {{ margin-top: 40px; font-size: 12px; color: {GRAY}; }}
 </style>
 </head>
@@ -305,6 +330,7 @@ def render_dashboard(stats: DashboardStats, email: str = "") -> str:
         {_tile("Documentos completos", str(documentos_completos), "listos para el agente", BLUE, icono="✅")}
         {_tile("Esperando documentos", str(pendiente_docs), color=NAVY, chip=TURQUESA, icono="⏱")}
         {_tile("Orden vencida", str(orden_vencida), "hay que pedir una nueva", ORANGE, icono="⚠️")}
+        {_tile("Esperando hace +72h", str(len(stats.esperando_documentos)), "sin novedad del paciente", ORANGE, icono="⌛")}
       </div>
 
       <div class="seccion-titulo">Gestionados (atendidos + agendados)</div>
@@ -324,6 +350,15 @@ def render_dashboard(stats: DashboardStats, email: str = "") -> str:
           <tr><td>Trámite</td><td>Histórico</td><td>Abiertas</td></tr>
           {filas_servicio}
         </table>
+      </div>
+
+      <div class="panel panel-dorado">
+        <h2>Esperando documentos hace más de 72 horas</h2>
+        <p class="panel-nota">
+          Pacientes a los que les falta algún documento y llevan más de 72 horas sin
+          mandar nada nuevo — conviene hacerles seguimiento antes de que se enfríen.
+        </p>
+        {filas_demoradas}
       </div>
 
       <div class="panel panel-blue">
@@ -400,7 +435,7 @@ def _sidebar(activo: str, email: str) -> str:
   </nav>"""
 
 
-def _fila_chat(conv: Conversacion, lista: bool = False, naranja: bool = False) -> str:
+def _fila_chat(conv: Conversacion, lista: bool = False, naranja: bool = False, gestionado: bool = False) -> str:
     titulo = html.escape(conv.nombre) if conv.nombre else conv.telefono
     subtitulo = f" · {conv.telefono}" if conv.nombre else ""
     extracto = html.escape(conv.ultimo_mensaje_extracto)
@@ -412,8 +447,12 @@ def _fila_chat(conv: Conversacion, lista: bool = False, naranja: bool = False) -
         badge += '<span class="badge badge-naranja">● Requiere asesor</span>'
     if lista:
         badge += '<span class="badge badge-lista">● Documentos completos</span>'
+    if gestionado:
+        badge += '<span class="badge badge-gestionado">✓ Gestionado</span>'
     # Si necesita asesor Y ya tiene documentos completos a la vez, prima el naranja —
-    # es lo más urgente de atender.
+    # es lo más urgente de atender. Gestionado ya no lleva color de franja (por eso no
+    # se incluye en clase_fila) — solo el badge de arriba, para no competir con
+    # naranja/azul en la lista.
     clase_fila = " fila-chat-naranja" if naranja else (" fila-chat-lista" if lista else "")
     return f"""
     <a class="fila-chat{clase_fila}" href="/dashboard/chats/{conv.telefono}" target="chatframe">
@@ -444,6 +483,7 @@ def render_lista_chats(
     estado: str = "todas",
     listos: frozenset[str] = frozenset(),
     naranjas: frozenset[str] = frozenset(),
+    gestionados: frozenset[str] = frozenset(),
 ) -> str:
     if estado == "activas":
         chats = [c for c in chats if not c.pausada]
@@ -453,8 +493,18 @@ def render_lista_chats(
         chats = [c for c in chats if c.telefono in listos]
     elif estado == "asesor":
         chats = [c for c in chats if c.telefono in naranjas]
+    elif estado == "gestionados":
+        chats = [c for c in chats if c.telefono in gestionados]
 
-    filas = "".join(_fila_chat(c, lista=c.telefono in listos, naranja=c.telefono in naranjas) for c in chats)
+    filas = "".join(
+        _fila_chat(
+            c,
+            lista=c.telefono in listos,
+            naranja=c.telefono in naranjas,
+            gestionado=c.telefono in gestionados,
+        )
+        for c in chats
+    )
     if not filas:
         filas = '<p class="fila-azul-vacio">No hay conversaciones que coincidan.</p>'
 
@@ -546,6 +596,7 @@ def render_lista_chats(
   .badge-pausada {{ color: {BEHIND}; }}
   .badge-lista {{ color: {BLUE}; }}
   .badge-naranja {{ color: {ORANGE}; }}
+  .badge-gestionado {{ color: {GOOD}; }}
   .fila-azul-vacio {{ font-size: 13px; color: {GRAY}; padding: 12px 8px; }}
 
   .detalle-col {{ flex: 1; min-width: 0; }}
@@ -567,6 +618,7 @@ def render_lista_chats(
             {opcion("pausadas", "Requieren atención")}
             {opcion("listas", "Documentos completos")}
             {opcion("asesor", "Requiere asesor")}
+            {opcion("gestionados", "Gestionados")}
           </select>
         </form>
       </div>
@@ -673,6 +725,13 @@ def _fila_documento(doc: dict) -> str:
     nombre = _NOMBRE_DOC_RECUADRO.get(doc.get("tipo"), doc.get("tipo", ""))
     extra = ""
     if doc.get("tipo") == "orden_clinica":
+        # Para la orden, "vigente" ya no es por fecha: es si trae marca/modelo/tecnología/
+        # circuito/lateralidad/cantidad completos (ver app/vision_client.py).
+        if doc.get("vigente") is True:
+            extra = " · datos completos"
+        elif doc.get("vigente") is False:
+            extra = " · faltan datos"
+    elif doc.get("tipo") == "autorizacion_servicio":
         if doc.get("vigente") is True:
             extra = " · vigente"
         elif doc.get("vigente") is False:

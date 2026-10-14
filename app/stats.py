@@ -15,6 +15,7 @@ from app.config import settings
 from app.db import get_client
 
 DIAS_HISTORIAL = 14  # ventana para calcular el ritmo diario promedio
+HORAS_ESPERA_DOCUMENTOS = 72  # a partir de cuántas horas sin novedad se considera demorado
 
 
 @dataclass
@@ -24,6 +25,15 @@ class SolicitudLista:
     servicio_nombre: str
     telefono: str
     regimen: str
+
+
+@dataclass
+class SolicitudEnEspera:
+    nombre: str
+    cedula: str
+    servicio_nombre: str
+    telefono: str
+    dias_esperando: int
 
 
 @dataclass
@@ -47,6 +57,9 @@ class DashboardStats:
     gestionados_hoy: int = 0
     gestionados_semana: int = 0
     gestionados_mes: int = 0
+    # Pacientes a los que les falta algún documento y llevan más de HORAS_ESPERA_DOCUMENTOS
+    # sin mandar nada nuevo — para hacerles seguimiento antes de que se enfríen.
+    esperando_documentos: list[SolicitudEnEspera] = field(default_factory=list)
 
 
 def _confirmados_en(desde: date, hasta: date) -> int:
@@ -114,6 +127,24 @@ def get_dashboard_stats() -> DashboardStats:
     gestionados_semana = solicitudes_module.contar_gestionados_desde(inicio_semana.isoformat())
     gestionados_mes = solicitudes_module.contar_gestionados_desde(inicio_mes_dt.isoformat())
 
+    ahora = datetime.now(timezone.utc)
+    esperando_documentos = []
+    for s in solicitudes_module.esperando_documentos_demorados(horas=HORAS_ESPERA_DOCUMENTOS, limit=100):
+        try:
+            desde = datetime.fromisoformat(s.actualizado_en.replace("Z", "+00:00"))
+        except ValueError:
+            continue
+        dias_esperando = max(1, (ahora - desde).days)
+        esperando_documentos.append(
+            SolicitudEnEspera(
+                nombre=s.nombre,
+                cedula=s.cedula,
+                servicio_nombre=solicitudes_module.NOMBRE_SERVICIO.get(s.servicio, s.servicio),
+                telefono=s.telefono,
+                dias_esperando=dias_esperando,
+            )
+        )
+
     return DashboardStats(
         confirmados_hoy=_confirmados_en(hoy, hoy),
         meta_diaria=settings.daily_goal,
@@ -129,4 +160,5 @@ def get_dashboard_stats() -> DashboardStats:
         gestionados_hoy=gestionados_hoy,
         gestionados_semana=gestionados_semana,
         gestionados_mes=gestionados_mes,
+        esperando_documentos=esperando_documentos,
     )
