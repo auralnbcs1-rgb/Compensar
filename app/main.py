@@ -54,6 +54,36 @@ from app.whatsapp_client import download_media, get_media_url, send_image, send_
 app = FastAPI(title="Aurora - Compensar / Widex Colombia S.A.S.")
 logger = logging.getLogger("dashboard")
 
+# ---------------------------------------------------------------------------
+# Mensajes de "Mantenimiento" y "Entrega Compensar" (trámites 6 y 7) — viven aquí en
+# vez de en app/mensajes.py porque son los únicos que no dependen de ningún dato de la
+# solicitud (nombre de servicio, documentos faltantes, etc.); si en algún momento se
+# quieren mover a mensajes.py junto con los demás, es un corte-y-pega sin más cambios.
+# ---------------------------------------------------------------------------
+
+MENSAJE_MANTENIMIENTO = (
+    "Gracias por escribirnos 😊\n\n"
+    "Te informamos que el *mantenimiento de audífonos* tiene un tiempo de "
+    "respuesta de *10 días hábiles*, contados a partir de la recepción del equipo "
+    "en nuestra sede.\n\n"
+    "Si tienes alguna duda adicional, con gusto te ayudamos."
+)
+
+MENSAJE_ENTREGA_COMPENSAR = (
+    "¡Hola! Para continuar con la *entrega de tus audífonos* por Compensar, "
+    "necesitamos confirmar algo:\n\n"
+    "¿Ya te realizaste el examen de *Evaluación y adaptación de prótesis y "
+    "ayudas auditivas*?\n\n"
+    "Responde *Sí* o *No*."
+)
+
+MENSAJE_ENTREGA_SIN_EVALUACION = (
+    "Para poder entregarte los audífonos, primero debes realizarte la "
+    "*Evaluación y adaptación de prótesis y ayudas auditivas*.\n\n"
+    "Si quieres, te ayudamos a iniciar ese trámite: escribe *1* y te indicamos "
+    "los documentos que necesitas."
+)
+
 
 @app.middleware("http")
 async def _sin_cache_en_dashboard(request: Request, call_next):
@@ -156,6 +186,9 @@ def _manejar_texto_sin_solicitud(phone: str, mensaje: str) -> dict:
     if flujo and flujo.get("paso") == "esperando_dato":
         return _recibir_dato(phone, flujo, mensaje)
 
+    if flujo and flujo.get("paso") == "esperando_respuesta_evaluacion":
+        return _recibir_respuesta_evaluacion(phone, flujo, mensaje)
+
     codigo_servicio = coincidencia_local(mensaje) or interpretar_seleccion_menu(mensaje)
 
     if codigo_servicio is None:
@@ -167,6 +200,17 @@ def _manejar_texto_sin_solicitud(phone: str, mensaje: str) -> dict:
 
 
 def _iniciar_solicitud(phone: str, codigo_servicio: str) -> dict:
+    if codigo_servicio == "entrega_compensar":
+        # Antes de pedir cualquier dato, hay que confirmar que ya se hizo la
+        # evaluación — si dice que no, se lo manda a ese trámite en vez de seguir.
+        session_store.set_flujo(phone, {"paso": "esperando_respuesta_evaluacion", "servicio": codigo_servicio})
+        _responder(phone, MENSAJE_ENTREGA_COMPENSAR)
+        return {"status": "esperando_respuesta_evaluacion"}
+
+    return _continuar_solicitud(phone, codigo_servicio)
+
+
+def _continuar_solicitud(phone: str, codigo_servicio: str) -> dict:
     paciente = backlog.find_by_phone(phone)
 
     if paciente is not None:
@@ -176,6 +220,29 @@ def _iniciar_solicitud(phone: str, codigo_servicio: str) -> dict:
     session_store.set_flujo(phone, {"paso": "esperando_cedula", "servicio": codigo_servicio})
     _responder(phone, "Para continuar, ¿me compartes tu número de cédula?")
     return {"status": "esperando_cedula"}
+
+
+def _recibir_respuesta_evaluacion(phone: str, flujo: dict, mensaje: str) -> dict:
+    respuesta = _interpretar_si_no(mensaje)
+    if respuesta is None:
+        _responder(phone, "No logré entenderte 🙏 ¿Ya te realizaste la evaluación? Responde *Sí* o *No*.")
+        return {"status": "respuesta_evaluacion_invalida"}
+
+    session_store.clear_flujo(phone)
+    if respuesta is False:
+        _responder(phone, MENSAJE_ENTREGA_SIN_EVALUACION)
+        return {"status": "entrega_sin_evaluacion"}
+
+    return _continuar_solicitud(phone, flujo["servicio"])
+
+
+def _interpretar_si_no(mensaje: str) -> bool | None:
+    texto = mensaje.strip().lower()
+    if texto.startswith("s"):  # sí, si, sip, claro que sí...
+        return True
+    if texto.startswith("n"):  # no, no todavía, nop...
+        return False
+    return None
 
 
 def _recibir_cedula_nueva_solicitud(phone: str, flujo: dict, mensaje: str) -> dict:
@@ -248,7 +315,7 @@ def _recibir_dato(phone: str, flujo: dict, mensaje: str) -> dict:
 
 def _crear_solicitud_y_pedir_documentos(phone: str, cedula: str, nombre: str, codigo_servicio: str, datos: dict) -> None:
     nombre_servicio, requiere_auth = _datos_servicio(codigo_servicio)
-    solicitudes.crear(
+    solicitud = solicitudes.crear(
         cedula=cedula,
         nombre=nombre,
         telefono=phone,
@@ -260,6 +327,17 @@ def _crear_solicitud_y_pedir_documentos(phone: str, cedula: str, nombre: str, co
         telefono_2=datos.get("telefono_2", ""),
         correo=datos.get("correo", ""),
     )
+
+    if codigo_servicio in solicitudes.SERVICIOS_SIN_DOCUMENTOS:
+        # Mantenimiento y Entrega Compensar no piden ningún documento — con los datos de
+        # contacto que ya se acaban de recoger alcanza; queda listo para el agente de una.
+        solicitudes.actualizar_estado(solicitud.id, "documentos_completos")
+        if codigo_servicio == "mantenimiento":
+            _responder(phone, MENSAJE_MANTENIMIENTO)
+        else:
+            _responder(phone, mensajes.documentos_completos(nombre_servicio))
+        return
+
     _responder(phone, mensajes.pedir_documentos(nombre_servicio, requiere_auth))
 
 

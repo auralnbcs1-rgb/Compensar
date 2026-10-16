@@ -1,8 +1,9 @@
-"""Capa de datos sobre `solicitudes` — un trámite de un paciente para uno de los 6
+"""Capa de datos sobre `solicitudes` — un trámite de un paciente para uno de los 7
 servicios de Aurora (evaluación y adaptación, prueba de audífono, control, evaluación
-tinnitus, terapia tinnitus, mantenimiento). Independiente de `backlog`, que sigue
-siendo solo el backlog de entrega de audífonos de Compensar (ver
-`_sincronizar_backlog_si_aplica` en main.py para cómo se cruzan cuando aplica).
+tinnitus, terapia tinnitus, mantenimiento, entrega de audífonos por Compensar).
+Independiente de `backlog`, que sigue siendo solo el backlog de entrega de audífonos de
+Compensar (ver `_sincronizar_backlog_si_aplica` en main.py para cómo se cruzan cuando
+aplica).
 """
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
@@ -20,6 +21,7 @@ SERVICIOS = {
     "4": ("evaluacion_tinnitus", "Evaluación Tinnitus", True),
     "5": ("terapia_tinnitus", "Terapia Tinnitus", True),
     "6": ("mantenimiento", "Mantenimiento", False),
+    "7": ("entrega_compensar", "Entrega de audífonos (Compensar)", False),
 }
 
 NOMBRE_SERVICIO = {codigo: nombre for _, (codigo, nombre, _) in SERVICIOS.items()}
@@ -29,6 +31,13 @@ DOCUMENTOS_REQUERIDOS: dict[bool, list[str]] = {
     True: ["orden_clinica", "autorizacion_servicio", "cedula"],
     False: ["orden_clinica"],
 }
+
+# Trámites que no piden ningún documento — con los datos de contacto (cédula, teléfonos,
+# correo) que ya se recogen para cualquier trámite, quedan listos para que un agente
+# se encargue del resto. 'mantenimiento' manda su propio mensaje de los 10 días hábiles
+# en vez de pedir documentos; 'entrega_compensar' primero confirma con el paciente que
+# ya se hizo la evaluación (ver main.py) y luego sigue este mismo camino sin documentos.
+SERVICIOS_SIN_DOCUMENTOS = {"mantenimiento", "entrega_compensar"}
 
 ESTADOS_ABIERTOS = ("pendiente_documentos", "orden_vencida", "requiere_humano")
 
