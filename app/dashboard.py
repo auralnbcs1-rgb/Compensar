@@ -843,14 +843,16 @@ def render_chat(
         </details>"""
 
     # Gestionado: botón rápido de un solo clic, aparte del dropdown de Observaciones —
-    # solo se ve cuando el chat tiene un color activo (naranja/azul) y sirve para
-    # quitárselo sin tener que escribir nada. Guarda igual las observaciones que ya
-    # hubiera, no las borra.
+    # disponible en CUALQUIER chat con una solicitud que todavía no esté gestionada
+    # (no solo naranja/azul: también sirve para cerrar a mano un pendiente_documentos u
+    # orden_vencida que ya atendiste por fuera del flujo normal). Guarda igual las
+    # observaciones que ya hubiera, no las borra. Si ya está gestionada (atendida/
+    # agendada) no se muestra — para eso ya está el badge "✅ Atendida/Agendada por…".
     boton_gestionado = ""
-    if solicitud is not None and solicitud.estado in GESTION_DESTINO:
+    if solicitud is not None and solicitud.estado not in ("atendida", "agendada"):
         boton_gestionado = f"""
         <form method="post" action="/dashboard/chats/{conv.telefono}/gestionado" style="display:inline;">
-          <button type="submit" class="boton-gestionado" title="Quita el color de este chat — marca el caso como ya gestionado">Gestionado</button>
+          <button type="submit" class="boton-gestionado" title="Marca este caso como ya gestionado">Gestionado</button>
         </form>"""
 
     return f"""<!doctype html>

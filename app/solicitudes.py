@@ -176,12 +176,25 @@ def requieren_asesor(limit: int = 50) -> list[Solicitud]:
 
 # De qué estado sale cada botón del panel, y a cuál lo deja — 'requiere_humano' (franja
 # naranja) lo cierra un agente que ya atendió al paciente; 'documentos_completos'
-# (franja azul) lo cierra un agente que ya agendó la cita. Cualquier otro estado no
-# tiene botón de gestión en el panel.
+# (franja azul) lo cierra un agente que ya agendó la cita.
 GESTION_DESTINO = {
     "requiere_humano": "atendida",
     "documentos_completos": "agendada",
 }
+
+
+def destino_gestion(estado: str) -> Optional[str]:
+    """A qué estado queda una solicitud cuando un agente la marca como gestionada desde
+    el botón "Gestionado" del panel — disponible en CUALQUIER chat, no solo naranja/azul.
+    Las dos transiciones con nombre propio (GESTION_DESTINO) significan lo mismo que
+    siempre; cualquier otro estado abierto (pendiente_documentos, orden_vencida) se cierra
+    como 'atendida' genérica — el agente ya se encargó del caso por fuera del flujo normal.
+    Si ya está en un estado gestionado (atendida/agendada), no hay nada que hacer: None."""
+    if estado in GESTION_DESTINO:
+        return GESTION_DESTINO[estado]
+    if estado in ESTADOS_GESTIONADOS:
+        return None
+    return "atendida"
 
 
 def marcar_gestionada(solicitud_id: int, agente_email: str, estado_final: str, observaciones: str = "") -> None:
