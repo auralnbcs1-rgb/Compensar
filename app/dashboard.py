@@ -484,6 +484,8 @@ def render_lista_chats(
     listos: frozenset[str] = frozenset(),
     naranjas: frozenset[str] = frozenset(),
     gestionados: frozenset[str] = frozenset(),
+    mostrar: int = 500,
+    hay_mas: bool = False,
 ) -> str:
     if estado == "activas":
         chats = [c for c in chats if not c.pausada]
@@ -507,6 +509,19 @@ def render_lista_chats(
     )
     if not filas:
         filas = '<p class="fila-azul-vacio">No hay conversaciones que coincidan.</p>'
+
+    # "Cargar más" — trae el siguiente bloque de 500 (ver conversaciones.listar). Solo
+    # aparece si de verdad hay más conversaciones después de las que ya se muestran;
+    # al hacer clic se recarga la página pidiendo 500 más, conservando la búsqueda y el
+    # filtro de estado activos.
+    boton_cargar_mas = ""
+    if hay_mas:
+        siguiente = mostrar + 500
+        query_busqueda = f"&q={html.escape(busqueda)}" if busqueda else ""
+        boton_cargar_mas = f"""
+        <div class="cargar-mas">
+          <a class="boton-cargar-mas" href="/dashboard/chats?estado={estado}&mostrar={siguiente}{query_busqueda}">Cargar 500 más</a>
+        </div>"""
 
     def opcion(valor: str, etiqueta: str) -> str:
         sel = " selected" if estado == valor else ""
@@ -569,6 +584,12 @@ def render_lista_chats(
     border-radius: 8px; font-size: 13px; background: {SURFACE}; color: {NAVY};
   }}
   .lista-scroll {{ overflow-y: auto; flex: 1; padding: 8px 10px 24px; }}
+  .cargar-mas {{ text-align: center; padding: 14px 8px; }}
+  .boton-cargar-mas {{
+    display: inline-block; font-size: 13px; font-weight: 600; color: {TEAL}; text-decoration: none;
+    border: 1px solid {TEAL}; border-radius: 8px; padding: 8px 16px;
+  }}
+  .boton-cargar-mas:hover {{ background: {TEAL}1A; }}
 
   .fila-chat {{
     display: flex; gap: 10px; border-radius: 10px; padding: 10px 10px;
@@ -622,7 +643,7 @@ def render_lista_chats(
           </select>
         </form>
       </div>
-      <div class="lista-scroll">{filas}</div>
+      <div class="lista-scroll">{filas}{boton_cargar_mas}</div>
     </div>
     <div class="detalle-col">
       <iframe name="chatframe" src="{_PLACEHOLDER_IFRAME}" title="Conversación"></iframe>

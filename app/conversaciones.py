@@ -134,13 +134,25 @@ def registrar_saliente(
     ).execute()
 
 
-def listar(busqueda: str = "", limit: int = 200) -> list[Conversacion]:
-    query = get_client().table("conversaciones").select("*").order("ultimo_mensaje_en", desc=True).limit(limit)
+def listar(busqueda: str = "", limit: int = 500) -> tuple[list[Conversacion], bool]:
+    """Bandeja de chats para el panel, ordenada por el mensaje más reciente primero.
+    Paginada de verdad: en vez de subir el tope cada vez que el historial crece (lo que
+    tarde o temprano vuelve a poner lento el panel), trae como mucho `limit` chats y
+    dice si hay más — el botón "Cargar más" del panel (ver render_lista_chats en
+    dashboard.py) pide de 500 en 500 según haga falta, sin perder nada del historial:
+    todo sigue guardado en Supabase, solo que no se trae de una sola vez.
+
+    Devuelve (chats, hay_mas). Para saber si hay más sin tener que contar toda la
+    tabla en cada carga, se pide un chat de más (`limit + 1`); si llega, se descarta
+    y se marca hay_mas=True."""
+    query = get_client().table("conversaciones").select("*").order("ultimo_mensaje_en", desc=True).limit(limit + 1)
     if busqueda:
         termino = busqueda.strip()
         query = query.or_(f"telefono.ilike.%{termino}%,nombre.ilike.%{termino}%")
     resp = query.execute()
-    return [_row_to_conversacion(row) for row in resp.data]
+    filas = resp.data
+    hay_mas = len(filas) > limit
+    return [_row_to_conversacion(row) for row in filas[:limit]], hay_mas
 
 
 def obtener(telefono: str) -> Optional[Conversacion]:

@@ -521,11 +521,15 @@ def dashboard_reportes(request: Request):
 # ---------------------------------------------------------------------------
 
 @app.get("/dashboard/chats", response_class=HTMLResponse)
-def lista_chats(request: Request, q: str = "", estado: str = "todas"):
+def lista_chats(request: Request, q: str = "", estado: str = "todas", mostrar: int = 500):
     email = _dashboard_email(request)
     if email is None:
         return RedirectResponse(url="/login", status_code=status.HTTP_303_SEE_OTHER)
-    chats = conversaciones.listar(busqueda=q)
+    # `mostrar` empieza en 500 y crece de 500 en 500 con el botón "Cargar más" del
+    # panel (ver render_lista_chats) — en vez de traer siempre TODAS las conversaciones
+    # que ha habido, lo que iba a volver a poner lento el panel a medida que crezca el
+    # historial (ver conversaciones.listar para el porqué).
+    chats, hay_mas = conversaciones.listar(busqueda=q, limit=mostrar)
     # Franja azul: teléfonos con una solicitud en "documentos_completos" — Aurora ya
     # tiene todo lo que necesita y el chat queda listo para que el agente lo tome.
     listos = {s.telefono for s in solicitudes.listas_para_agente(limit=500)}
@@ -537,11 +541,19 @@ def lista_chats(request: Request, q: str = "", estado: str = "todas"):
     # bajo el filtro "Gestionados" del panel.
     gestionados = {s.telefono for s in solicitudes.gestionadas(limit=500)}
     logger.warning(
-        "lista_chats: estado=%r chats=%d listos=%r naranjas=%r gestionados=%r",
-        estado, len(chats), listos, naranjas, gestionados,
+        "lista_chats: estado=%r mostrar=%d chats=%d hay_mas=%r listos=%r naranjas=%r gestionados=%r",
+        estado, mostrar, len(chats), hay_mas, listos, naranjas, gestionados,
     )
     return render_lista_chats(
-        chats, email=email, busqueda=q, estado=estado, listos=listos, naranjas=naranjas, gestionados=gestionados,
+        chats,
+        email=email,
+        busqueda=q,
+        estado=estado,
+        listos=listos,
+        naranjas=naranjas,
+        gestionados=gestionados,
+        mostrar=mostrar,
+        hay_mas=hay_mas,
     )
 
 
