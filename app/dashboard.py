@@ -186,6 +186,7 @@ def render_dashboard(stats: DashboardStats, email: str = "") -> str:
     documentos_completos = stats.solicitudes_por_estado.get("documentos_completos", 0)
     pendiente_docs = stats.solicitudes_por_estado.get("pendiente_documentos", 0)
     orden_vencida = stats.solicitudes_por_estado.get("orden_vencida", 0)
+    requiere_asesor = stats.solicitudes_por_estado.get("requiere_humano", 0)
 
     filas_azules = "".join(
         _fila_lista_azul(s.nombre, s.cedula, s.servicio_nombre, s.telefono, s.regimen)
@@ -355,6 +356,7 @@ def render_dashboard(stats: DashboardStats, email: str = "") -> str:
         {_tile("Esperando documentos", str(pendiente_docs), color=NAVY, chip=TURQUESA, icono="⏱")}
         {_tile("Orden vencida", str(orden_vencida), "hay que pedir una nueva", ORANGE, icono="⚠️")}
         {_tile("Esperando hace +72h", str(len(stats.esperando_documentos)), "sin novedad del paciente", ORANGE, icono="⌛")}
+        {_tile("Requieren asesor", str(requiere_asesor), "franja naranja 🟠 — pendientes de que un agente los atienda", ORANGE, icono="🟠")}
       </div>
 
       <div class="seccion-titulo">Gestionados (atendidos + agendados)</div>
