@@ -10,7 +10,7 @@ que el bot ponga etiquetas de color nativas de WhatsApp Business, así que esta 
 en el dashboard es la forma real de verlo: ver nota en README.md.
 """
 import html
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from typing import Optional
 
 from app.conversaciones import Conversacion, Mensaje
@@ -30,6 +30,11 @@ MUTED_GRID = "#E4E4E4"
 TURQUESA = "#8ED5DE"    # complementario — acentos decorativos (chips, franjas suaves)
 DORADO = "#F5C753"      # complementario — acentos decorativos (chips, franjas suaves)
 BEIGE = "#CAC1B0"       # complementario — fondos suaves, franjas de tabla
+
+# Todos los timestamps se guardan en UTC (ver conversaciones._touch) — Colombia no
+# tiene horario de verano, así que un desfase fijo de -5 horas alcanza para mostrarlos
+# en la hora real de Bogotá en vez de en UTC (ver _fmt_hora y _fmt_fecha_corta).
+ZONA_COLOMBIA = timezone(timedelta(hours=-5))
 
 # Logo corporativo Aural + Widex — login y encabezado del panel de chats (PNG con
 # fondo transparente, generado a partir del logo oficial; no se sirve desde archivo
@@ -420,6 +425,11 @@ def _fmt_hora(iso: str) -> str:
         dt = datetime.fromisoformat(iso.replace("Z", "+00:00"))
     except ValueError:
         return iso
+    # Lo que llega aquí está en UTC (o ya trae su propio offset) — se convierte a hora
+    # de Bogotá para mostrar, en vez de la hora UTC cruda (ver ZONA_COLOMBIA arriba).
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    dt = dt.astimezone(ZONA_COLOMBIA)
     return dt.strftime("%d %b %I:%M %p").lstrip("0").replace(" 0", " ")
 
 
@@ -755,9 +765,12 @@ def _fmt_fecha_corta(iso: str) -> str:
     if not iso:
         return ""
     try:
-        return datetime.fromisoformat(iso).strftime("%d/%m/%Y")
+        dt = datetime.fromisoformat(iso.replace("Z", "+00:00"))
     except ValueError:
         return iso
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(ZONA_COLOMBIA).strftime("%d/%m/%Y")
 
 
 _NOMBRE_DOC_RECUADRO = {
