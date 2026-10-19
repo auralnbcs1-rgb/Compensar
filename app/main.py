@@ -299,7 +299,15 @@ def _recibir_nombre_nueva_solicitud(phone: str, flujo: dict, mensaje: str) -> di
 def _comenzar_recoleccion_datos(phone: str, codigo_servicio: str, cedula: str, nombre: str) -> None:
     """Después de saber quién es el paciente y qué trámite quiere, Aurora pide, uno por
     uno, los datos adicionales de CAMPOS (fecha de nacimiento, dirección, régimen,
-    segundo teléfono, correo) antes de pasar a pedir los documentos."""
+    segundo teléfono, correo) antes de pasar a pedir los documentos — salvo los
+    trámites de SERVICIOS_SIN_DATOS_EXTRA (hoy, Control): con cédula, nombre y el
+    teléfono de WhatsApp (que ya tenemos, es el mismo por el que está escribiendo)
+    alcanza, así que se saltan tanto esta parte como la de documentos y queda listo
+    para el agente de una vez."""
+    if codigo_servicio in solicitudes.SERVICIOS_SIN_DATOS_EXTRA:
+        _crear_solicitud_y_pedir_documentos(phone, cedula, nombre, codigo_servicio, {})
+        return
+
     session_store.set_flujo(
         phone,
         {

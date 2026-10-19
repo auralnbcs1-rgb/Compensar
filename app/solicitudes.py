@@ -6,7 +6,7 @@ Compensar (ver `_sincronizar_backlog_si_aplica` en main.py para cómo se cruzan 
 aplica).
 """
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Optional
 
 from app.db import get_client
@@ -36,8 +36,16 @@ DOCUMENTOS_REQUERIDOS: dict[bool, list[str]] = {
 # correo) que ya se recogen para cualquier trámite, quedan listos para que un agente
 # se encargue del resto. 'mantenimiento' manda su propio mensaje de los 10 días hábiles
 # en vez de pedir documentos; 'entrega_compensar' primero confirma con el paciente que
-# ya se hizo la evaluación (ver main.py) y luego sigue este mismo camino sin documentos.
-SERVICIOS_SIN_DOCUMENTOS = {"mantenimiento", "entrega_compensar"}
+# ya se hizo la evaluación (ver main.py) y luego sigue este mismo camino sin documentos;
+# 'control' no pide documentos ni los datos extra de abajo (ver SERVICIOS_SIN_DATOS_EXTRA).
+SERVICIOS_SIN_DOCUMENTOS = {"mantenimiento", "entrega_compensar", "control"}
+
+# Trámites que, además de no pedir documentos, tampoco piden los datos adicionales de
+# CAMPOS (fecha de nacimiento, dirección, régimen, segundo teléfono, correo) — con
+# cédula, nombre completo (que se piden siempre) y el teléfono de WhatsApp (que ya se
+# conoce, es el mismo por el que está escribiendo) alcanza para dejarlo listo para el
+# agente (ver _comenzar_recoleccion_datos en main.py).
+SERVICIOS_SIN_DATOS_EXTRA = {"control"}
 
 ESTADOS_ABIERTOS = ("pendiente_documentos", "orden_vencida", "requiere_humano")
 
@@ -59,6 +67,7 @@ class Solicitud:
     atendido_por: str = ""
     observaciones: str = ""
     actualizado_en: str = ""
+    creado_en: str = ""
 
 
 def _row_to_solicitud(row: dict) -> Solicitud:
@@ -78,6 +87,7 @@ def _row_to_solicitud(row: dict) -> Solicitud:
         atendido_por=row.get("atendido_por") or "",
         observaciones=row.get("observaciones") or "",
         actualizado_en=row.get("actualizado_en") or "",
+        creado_en=row.get("creado_en") or "",
     )
 
 
@@ -301,6 +311,57 @@ def esperando_documentos_demorados(horas: int = 72, limit: int = 100) -> list[So
         .select("*")
         .eq("estado", "pendiente_documentos")
         .lte("actualizado_en", limite.isoformat())
+        .order("actualizado_en")
+        .limit(limit)
+        .execute()
+    )
+    return [_row_to_solicitud(row) for row in resp.data]
+
+
+# ---------------------------------------------------------------------------
+# Para el Excel descargable de Reportes (ver main.py /dashboard/reportes/excel) — dos
+# cortes por fecha distintos, porque `actualizado_en` se pisa cada vez que la solicitud
+# avanza y por eso no sirve para reconstruir "cuándo pasó cada cosa" en el pasado:
+# - creadas_entre: la cohorte de solicitudes que EMPEZARON en el rango (creado_en no
+#   cambia nunca) — a partir de ahí se mira en qué quedó cada una ahora mismo.
+# - gestionadas_entre: las que se GESTIONARON en el rango (actualizado_en sí sirve
+#   aquí, porque es justo el momento de la gestión, el último cambio que tuvieron).
+# ---------------------------------------------------------------------------
+
+def creadas_entre(desde: date, hasta: date, limit: int = 5000) -> list[Solicitud]:
+    """Solicitudes creadas entre `desde` y `hasta` (ambos incluidos) — la cohorte base
+    del resumen diario del Excel: para cada una se compara su fecha de inicio (fija)
+    contra su estado actual, para ver cuántas llegaron a documentos completos,
+    requirieron asesor, etc."""
+    inicio = datetime.combine(desde, datetime.min.time(), tzinfo=timezone.utc)
+    fin = datetime.combine(hasta, datetime.max.time(), tzinfo=timezone.utc)
+    resp = (
+        get_client()
+        .table("solicitudes")
+        .select("*")
+        .gte("creado_en", inicio.isoformat())
+        .lte("creado_en", fin.isoformat())
+        .order("creado_en")
+        .limit(limit)
+        .execute()
+    )
+    return [_row_to_solicitud(row) for row in resp.data]
+
+
+def gestionadas_entre(desde: date, hasta: date, limit: int = 5000) -> list[Solicitud]:
+    """Solicitudes gestionadas (atendida/agendada) cuya gestión cayó entre `desde` y
+    `hasta` — aquí sí se usa `actualizado_en`, porque para estos casos ese campo
+    refleja exactamente el momento en que un agente las cerró (ver marcar_gestionada),
+    no un paso intermedio que luego se sobrescribió."""
+    inicio = datetime.combine(desde, datetime.min.time(), tzinfo=timezone.utc)
+    fin = datetime.combine(hasta, datetime.max.time(), tzinfo=timezone.utc)
+    resp = (
+        get_client()
+        .table("solicitudes")
+        .select("*")
+        .in_("estado", list(ESTADOS_GESTIONADOS))
+        .gte("actualizado_en", inicio.isoformat())
+        .lte("actualizado_en", fin.isoformat())
         .order("actualizado_en")
         .limit(limit)
         .execute()
