@@ -10,7 +10,7 @@ que el bot ponga etiquetas de color nativas de WhatsApp Business, así que esta 
 en el dashboard es la forma real de verlo: ver nota en README.md.
 """
 import html
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from typing import Optional
 
 from app.conversaciones import Conversacion, Mensaje
@@ -276,6 +276,17 @@ def render_dashboard(stats: DashboardStats, email: str = "") -> str:
   .panel-teal {{ border-left-color: {TEAL}; }}
   .panel-blue {{ border-left-color: {BLUE}; }}
   .panel-dorado {{ border-left-color: {DORADO}; }}
+  .panel-excel {{ border-left-color: {TEAL}; background: {BEIGE}1F; }}
+  .excel-fechas {{ display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }}
+  .excel-fechas label {{ font-size: 12px; color: {GRAY}; display: flex; flex-direction: column; gap: 4px; }}
+  .excel-fechas input[type="date"] {{
+    border: 1px solid {MUTED_GRID}; border-radius: 6px; padding: 6px 8px; font-size: 13px; color: {NAVY};
+  }}
+  .boton-excel {{
+    align-self: flex-end; background: {TEAL}; color: {SURFACE}; border: none; border-radius: 8px;
+    padding: 9px 18px; font-size: 13px; font-weight: 600; cursor: pointer;
+  }}
+  .boton-excel:hover {{ background: #0C4D58; }}
   .panel h2 {{ font-size: 14px; margin: 0 0 4px; }}
   .panel-nota {{ font-size: 12px; color: {GRAY}; margin: 0 0 14px; }}
   details {{ margin-top: 14px; font-size: 13px; color: {GRAY}; }}
@@ -318,6 +329,19 @@ def render_dashboard(stats: DashboardStats, email: str = "") -> str:
       </div>
       <p class="subtitulo">Actualizado {date.today().isoformat()} · datos de Supabase, sin depender del Excel</p>
       <p class="subtitulo">Aurora recolecta documentos y confirma interés — el agente de atención al cliente cierra la cita (fecha/hora) por fuera del bot.</p>
+
+      <form class="panel panel-excel" method="get" action="/dashboard/reportes/excel">
+        <h2>Descargar Excel</h2>
+        <p class="panel-nota">
+          Resumen diario, gestionados (con fecha y observaciones) y las preguntas más
+          frecuentes de los pacientes, agrupadas por tema. Elige el rango de fechas.
+        </p>
+        <div class="excel-fechas">
+          <label>Desde <input type="date" name="desde" value="{(date.today() - timedelta(days=30)).isoformat()}" /></label>
+          <label>Hasta <input type="date" name="hasta" value="{date.today().isoformat()}" /></label>
+          <button type="submit" class="boton-excel">⬇ Descargar Excel</button>
+        </div>
+      </form>
 
       <div class="seccion-titulo">Backlog</div>
       <div class="tiles">
@@ -707,10 +731,21 @@ def _burbuja(m: Mensaje) -> str:
         cuerpo = _con_negritas(html.escape(m.contenido)).replace("\n", "<br>")
 
     lado = "burbuja-izq" if es_entrante else "burbuja-der"
+
+    # Aviso de "no entregado" — solo aplica a mensajes salientes (Aurora o agente): si
+    # WhatsApp nos avisó por su webhook de estados que este mensaje falló, se lo
+    # mostramos al agente aquí mismo, en vez de que se entere semanas después porque el
+    # paciente se queja de que nunca le llegó nada.
+    aviso_fallo = ""
+    if not es_entrante and m.estado_entrega == "failed":
+        motivo = html.escape(m.error_entrega) if m.error_entrega else "WhatsApp no dio más detalle."
+        aviso_fallo = f'<div class="burbuja-no-entregado">⚠️ No entregado — {motivo}</div>'
+
     return f"""
     <div class="burbuja {lado}">
       <div class="burbuja-quien">{html.escape(quien)} · {_fmt_hora(m.creado_en)}</div>
       <div class="burbuja-cuerpo">{cuerpo}</div>
+      {aviso_fallo}
     </div>"""
 
 
@@ -995,6 +1030,7 @@ def render_chat(
   .burbuja-der {{ align-self: flex-end; background: #EEF3FC; border: 1px solid #D7E3F7; }}
   .burbuja-quien {{ font-size: 10px; color: {GRAY}; margin-bottom: 3px; }}
   .burbuja-cuerpo {{ color: {NAVY}; white-space: pre-wrap; }}
+  .burbuja-no-entregado {{ margin-top: 6px; padding: 5px 9px; border-radius: 8px; background: #FDEDEE; color: #A1202C; font-size: 11.5px; font-weight: 600; }}
   .fila-vacio {{ font-size: 13px; color: {GRAY}; text-align: center; margin-top: 60px; }}
 
   form.enviar {{ flex: none; background: {SURFACE}; border-top: 1px solid {MUTED_GRID}; padding: 14px 24px; }}

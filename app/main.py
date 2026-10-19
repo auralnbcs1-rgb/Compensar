@@ -12,7 +12,7 @@ comunicar, en las sedes/horario fijos de Usaquén y Javeriana.
 
 Endpoints:
 - GET  /webhook                          → verificación del webhook (Meta la llama al configurar la app)
-- POST /webhook                          → mensajes entrantes de pacientes (texto e imágenes)
+- POST /webhook                          → mensajes entrantes de pacientes (texto e imágenes) y estados de entrega de los salientes (sent/delivered/read/failed)
 - GET  /login                            → formulario de ingreso al dashboard (correo/clave de Supabase Auth)
 - POST /login                            → procesa el ingreso y deja la sesión en una cookie
 - GET  /logout                           → cierra la sesión del dashboard
@@ -24,12 +24,14 @@ Endpoints:
 - POST /dashboard/chats/{telefono}/observaciones → un agente guarda una nota del chat (y cierra el caso si aplica)
 - POST /dashboard/chats/{telefono}/gestionado     → un agente quita el color (naranja/azul) del chat con un solo clic
 - GET  /dashboard/completas               → recuadro completo de cada paciente con documentos completos
+- GET  /dashboard/reportes/excel           → descarga el Excel de Reportes (resumen diario, gestionados, preguntas frecuentes)
 
 Ejecutar en desarrollo:
     uvicorn app.main:app --reload --port 8000
 """
 import logging
 import re
+from datetime import date, timedelta
 
 from fastapi import FastAPI, File, Form, Request, Response, UploadFile, status
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -47,6 +49,7 @@ from app.dashboard import (
 from app.dashboard_auth import COOKIE_NAME, iniciar_sesion, validar_token
 from app.datos_paciente import CAMPOS
 from app.menu_matcher import coincidencia_local
+from app.reportes_excel import agrupar_preguntas_frecuentes, construir_excel
 from app.stats import get_dashboard_stats
 from app.vision_client import clasificar
 from app.whatsapp_client import download_media, get_media_url, send_image, send_text, upload_media
@@ -99,11 +102,23 @@ async def _sin_cache_en_dashboard(request: Request, call_next):
     return response
 
 
+def _wa_message_id(respuesta: dict) -> str:
+    """El ID (wamid...) que Meta asigna al mensaje que acabamos de mandar. Se guarda
+    junto al mensaje saliente para poder relacionarlo, más tarde, con el evento de
+    estado (entregado / fallido) que Meta manda por separado al webhook — el 200 OK
+    de la llamada de envío solo confirma que Meta lo recibió para procesar, NO que
+    de verdad le llegó al paciente (ver _extract_status más abajo)."""
+    try:
+        return respuesta["messages"][0]["id"]
+    except (KeyError, IndexError, TypeError):
+        return ""
+
+
 def _responder(phone: str, texto: str) -> None:
     """Manda un mensaje de Aurora Y lo deja registrado en el historial del panel de
     chats — usa esto (no send_text directo) en cualquier respuesta automática del bot."""
-    send_text(phone, texto)
-    conversaciones.registrar_saliente(phone, "texto", "aurora", contenido=texto)
+    respuesta = send_text(phone, texto)
+    conversaciones.registrar_saliente(phone, "texto", "aurora", contenido=texto, wa_message_id=_wa_message_id(respuesta))
 
 
 @app.get("/webhook")
@@ -122,7 +137,16 @@ async def receive_message(request: Request):
     body = await request.json()
     entrante = _extract_message(body)
     if entrante is None:
-        # Puede ser un evento de estado (entregado/leído) o un tipo que no manejamos aún.
+        # No es un mensaje entrante — puede ser un evento de estado de un mensaje que
+        # NOSOTROS mandamos (sent/delivered/read/failed) o un tipo de adjunto que no
+        # manejamos aún. Si es un estado, lo guardamos: es la única forma de saber si
+        # un mensaje saliente de verdad llegó o falló (ver _extract_status).
+        estado = _extract_status(body)
+        if estado is not None:
+            conversaciones.marcar_estado_entrega(
+                estado["wa_message_id"], estado["estado"], error=estado.get("error", "")
+            )
+            return {"status": "estado_actualizado"}
         return {"status": "ignored"}
 
     phone = entrante["phone"]
@@ -514,6 +538,43 @@ def dashboard_reportes(request: Request):
     return render_dashboard(stats, email=email)
 
 
+@app.get("/dashboard/reportes/excel")
+def dashboard_reportes_excel(request: Request, desde: str = "", hasta: str = ""):
+    """Descarga el Excel de Reportes para el rango de fechas elegido en el panel (ver
+    el formulario en render_dashboard) — resumen diario, gestionados por día y en
+    detalle, y preguntas frecuentes agrupadas por tema con Claude (ver
+    app/reportes_excel.py). Si las fechas vienen vacías o mal escritas, usa los
+    últimos 30 días por defecto en vez de fallar."""
+    email = _dashboard_email(request)
+    if email is None:
+        return RedirectResponse(url="/login", status_code=status.HTTP_303_SEE_OTHER)
+
+    hoy = date.today()
+    try:
+        fecha_desde = date.fromisoformat(desde) if desde else hoy - timedelta(days=30)
+    except ValueError:
+        fecha_desde = hoy - timedelta(days=30)
+    try:
+        fecha_hasta = date.fromisoformat(hasta) if hasta else hoy
+    except ValueError:
+        fecha_hasta = hoy
+    if fecha_desde > fecha_hasta:
+        fecha_desde, fecha_hasta = fecha_hasta, fecha_desde
+
+    cohorte = solicitudes.creadas_entre(fecha_desde, fecha_hasta)
+    gestionadas = solicitudes.gestionadas_entre(fecha_desde, fecha_hasta)
+    mensajes_pacientes = conversaciones.mensajes_entrantes_entre(fecha_desde, fecha_hasta)
+    temas = agrupar_preguntas_frecuentes(mensajes_pacientes)
+
+    contenido = construir_excel(fecha_desde, fecha_hasta, cohorte, gestionadas, temas)
+    nombre_archivo = f"aurora_reportes_{fecha_desde.isoformat()}_a_{fecha_hasta.isoformat()}.xlsx"
+    return Response(
+        content=contenido,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{nombre_archivo}"'},
+    )
+
+
 # ---------------------------------------------------------------------------
 # Dashboard — panel de chats: bandeja de conversaciones + entrar a escribir/mandar
 # imágenes como agente (equivalente al inbox de Amanda). Al mandar algo desde acá, el
@@ -593,11 +654,20 @@ async def enviar_mensaje_agente(
         content_type = imagen.content_type or "image/jpeg"
         storage_path = chat_media.subir_imagen(telefono, contenido, content_type)
         media_id = upload_media(contenido, content_type)
-        send_image(telefono, media_id, caption=texto.strip())
-        conversaciones.registrar_saliente(telefono, "imagen", email, contenido=texto.strip(), storage_path=storage_path)
+        respuesta = send_image(telefono, media_id, caption=texto.strip())
+        conversaciones.registrar_saliente(
+            telefono,
+            "imagen",
+            email,
+            contenido=texto.strip(),
+            storage_path=storage_path,
+            wa_message_id=_wa_message_id(respuesta),
+        )
     elif texto.strip():
-        send_text(telefono, texto.strip())
-        conversaciones.registrar_saliente(telefono, "texto", email, contenido=texto.strip())
+        respuesta = send_text(telefono, texto.strip())
+        conversaciones.registrar_saliente(
+            telefono, "texto", email, contenido=texto.strip(), wa_message_id=_wa_message_id(respuesta)
+        )
 
     return RedirectResponse(url=f"/dashboard/chats/{telefono}", status_code=status.HTTP_303_SEE_OTHER)
 
@@ -695,6 +765,34 @@ def _extraer_cedula(texto: str) -> str | None:
     con puntos, espacios o precedida de texto: "1.234.567.890", "mi cc es 1234567890")."""
     digitos = re.sub(r"\D", "", texto)
     return digitos if 6 <= len(digitos) <= 10 else None
+
+
+def _extract_status(body: dict) -> dict | None:
+    """Extrae un evento de estado de un mensaje SALIENTE (uno que nosotros mandamos —
+    de Aurora o de un agente desde el panel). WhatsApp lo manda en un webhook separado
+    del de mensajes entrantes: 'sent' cuando lo acepta, 'delivered' cuando llega al
+    teléfono, 'read' cuando lo leen, y 'failed' cuando NO se pudo entregar — con el
+    motivo en 'errors'. El 200 OK que recibimos al mandar el mensaje NO es esto: ese
+    solo confirma que Meta lo recibió para procesar, no que el paciente lo recibió."""
+    try:
+        entry = body["entry"][0]
+        change = entry["changes"][0]["value"]
+        statuses = change.get("statuses")
+        if not statuses:
+            return None
+        st = statuses[0]
+        wa_message_id = st.get("id", "")
+        estado = st.get("status", "")
+        if not wa_message_id or not estado:
+            return None
+        error = ""
+        if estado == "failed":
+            errores = st.get("errors") or []
+            if errores:
+                error = errores[0].get("title") or errores[0].get("message") or "Error sin detalle de WhatsApp."
+        return {"wa_message_id": wa_message_id, "estado": estado, "error": error}
+    except (KeyError, IndexError, TypeError):
+        return None
 
 
 def _extract_message(body: dict) -> dict | None:
