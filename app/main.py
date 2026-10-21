@@ -163,12 +163,25 @@ async def receive_message(request: Request):
 
     # Se registra el mensaje en el historial del panel de chats SIEMPRE, pase lo que
     # pase después — así el agente ve la conversación completa incluso si el bot no
-    # llegó a contestar (chat pausado, tipo de adjunto no manejado, etc.).
+    # llegó a contestar (chat pausado, tipo de adjunto no manejado, etc.). Para
+    # imágenes, descargar el adjunto de WhatsApp puede fallar (URL de media vencida,
+    # problema de red o de token) — antes, si eso pasaba, toda la función reventaba
+    # ANTES de llegar a registrar el mensaje, así que el paciente veía que "lo mandó"
+    # pero nunca aparecía nada en el panel. Ahora, si falla la descarga, igual se
+    # registra el mensaje (sin la imagen) para no perder el rastro, y se le avisa al
+    # paciente para que la reenvíe.
     contenido_imagen: tuple[bytes, str] | None = None
     if entrante["type"] == "image":
-        media_url = get_media_url(entrante["media_id"])
-        contenido_imagen = download_media(media_url)
-        storage_path = chat_media.subir_imagen(phone, contenido_imagen[0], contenido_imagen[1])
+        storage_path = None
+        try:
+            media_url = get_media_url(entrante["media_id"])
+            contenido_imagen = download_media(media_url)
+            storage_path = chat_media.subir_imagen(phone, contenido_imagen[0], contenido_imagen[1])
+        except Exception:
+            logger.exception(
+                "No se pudo descargar la imagen entrante de %s (media_id=%r)", phone, entrante.get("media_id")
+            )
+            contenido_imagen = None
         conversaciones.registrar_entrante(
             phone, "imagen", storage_path=storage_path, nombre=nombre_conocido, wa_message_id=wa_message_id
         )
@@ -185,6 +198,12 @@ async def receive_message(request: Request):
     solicitud_abierta = solicitudes.abierta_por_telefono(phone)
 
     if entrante["type"] == "image":
+        if contenido_imagen is None:
+            # Ya quedó registrada en el panel (sin la imagen, ver arriba) — pero no hay
+            # contenido que clasificar, así que se le avisa al paciente en vez de
+            # dejarlo sin ninguna respuesta.
+            _responder(phone, "No pudimos recibir esa imagen 🙏 ¿Puedes intentar enviarla de nuevo?")
+            return {"status": "imagen_no_descargada"}
         contenido, content_type = contenido_imagen
         return _manejar_imagen(phone, solicitud_abierta, contenido, content_type)
 
