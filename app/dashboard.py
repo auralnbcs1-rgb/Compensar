@@ -874,7 +874,7 @@ def _recuadro_paciente(solicitud: Solicitud, documentos_lista: list[dict], mostr
     )
     boton_gestionar = (
         f"""
-        <form method="post" action="/dashboard/chats/{solicitud.telefono}/gestionado?volver=completas" class="recuadro-gestionar">
+        <form method="post" action="/dashboard/chats/{solicitud.telefono}/gestionado?volver=completas&solicitud_id={solicitud.id}" class="recuadro-gestionar">
           <button type="submit" class="boton-gestionado" title="Marca este caso como ya gestionado">Gestionado</button>
         </form>"""
         if mostrar_boton_gestionar

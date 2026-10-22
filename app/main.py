@@ -748,7 +748,7 @@ def guardar_observaciones_chat(telefono: str, request: Request, observaciones: s
 
 
 @app.post("/dashboard/chats/{telefono}/gestionado")
-def marcar_chat_gestionado(telefono: str, request: Request, volver: str = ""):
+def marcar_chat_gestionado(telefono: str, request: Request, volver: str = "", solicitud_id: int = 0):
     """Botón "Gestionado" — disponible en CUALQUIER chat que tenga una solicitud, sin
     importar su estado (no solo naranja/azul), y también desde la lista de "Completas"
     (ver _recuadro_paciente en dashboard.py). Un clic, sin escribir nada: conserva las
@@ -757,11 +757,19 @@ def marcar_chat_gestionado(telefono: str, request: Request, volver: str = ""):
     abierto (ver `solicitudes.destino_gestion`). Si el chat no tiene ninguna solicitud,
     o ya está gestionada, no hace nada. `volver=completas` hace que, después de
     gestionar, el agente vuelva a la lista de "Completas" (donde esa solicitud ya no
-    va a aparecer, por dejar de estar en 'documentos_completos') en vez de ir al chat."""
+    va a aparecer, por dejar de estar en 'documentos_completos') en vez de ir al chat.
+
+    `solicitud_id` identifica exactamente cuál solicitud gestionar — lo manda la tarjeta
+    de "Completas", porque un mismo teléfono puede tener más de un trámite a lo largo
+    del tiempo y `ultima_por_telefono` traería la más reciente de TODAS, no
+    necesariamente la que está en la tarjeta (eso hacía que "Gestionado" desde Completas
+    a veces marcara otra solicitud distinta, y la tarjeta seguía apareciendo). Si no
+    viene (el botón del chat individual no lo manda), se sigue usando la más reciente
+    del teléfono como antes."""
     email = _dashboard_email(request)
     if email is None:
         return RedirectResponse(url="/login", status_code=status.HTTP_303_SEE_OTHER)
-    solicitud = solicitudes.ultima_por_telefono(telefono)
+    solicitud = solicitudes.obtener_por_id(solicitud_id) if solicitud_id else solicitudes.ultima_por_telefono(telefono)
     if solicitud is not None:
         estado_final = solicitudes.destino_gestion(solicitud.estado)
         if estado_final is not None:

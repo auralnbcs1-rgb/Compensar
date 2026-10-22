@@ -140,6 +140,15 @@ def abierta_por_telefono(telefono: str) -> Optional[Solicitud]:
     return _row_to_solicitud(resp.data[0]) if resp.data else None
 
 
+def obtener_por_id(solicitud_id: int) -> Optional[Solicitud]:
+    """Una solicitud puntual por su id — para cuando ya sabemos exactamente cuál es (por
+    ejemplo, la tarjeta de "Completas" que el agente tiene en pantalla), en vez de
+    adivinarla por teléfono con `ultima_por_telefono` (que puede traer una solicitud
+    distinta si ese número ya tiene más de un trámite)."""
+    resp = get_client().table("solicitudes").select("*").eq("id", solicitud_id).limit(1).execute()
+    return _row_to_solicitud(resp.data[0]) if resp.data else None
+
+
 def ultima_por_telefono(telefono: str) -> Optional[Solicitud]:
     """La solicitud más reciente de este número, esté abierta o ya cerrada — la usa el
     panel de chats para saber si el caso quedó pidiendo un asesor, o quién ya lo atendió,
