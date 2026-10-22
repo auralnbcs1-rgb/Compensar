@@ -377,6 +377,7 @@ def render_dashboard(stats: DashboardStats, email: str = "") -> str:
         {_tile("Orden vencida", str(orden_vencida), "hay que pedir una nueva", ORANGE, icono="⚠️")}
         {_tile("Esperando hace +72h", str(len(stats.esperando_documentos)), "sin novedad del paciente", ORANGE, icono="⌛")}
         {_tile("Requieren asesor", str(requiere_asesor), "franja naranja 🟠 — pendientes de que un agente los atienda", ORANGE, icono="🟠")}
+        {_tile("Tomados por un agente", str(len(stats.tomados_por_agente)), "en proceso de agenda", TEAL, icono="🗣️")}
       </div>
 
       <div class="seccion-titulo">Gestionados (atendidos + agendados)</div>
@@ -846,11 +847,15 @@ def _fila_documento(doc: dict) -> str:
     return f'<div class="doc-fila">✅ {etiqueta}</div>'
 
 
-def _recuadro_paciente(solicitud: Solicitud, documentos_lista: list[dict]) -> str:
+def _recuadro_paciente(solicitud: Solicitud, documentos_lista: list[dict], mostrar_boton_gestionar: bool = False) -> str:
     """Caja plegada por defecto con toda la información que Aurora ya recolectó de este
     paciente — datos personales + fotos de los documentos recibidos. Se abre con un clic
     en "Documentos completos" en vez de ocupar la pantalla de entrada. Se usa tanto en el
-    chat individual (cuando ya tiene todo) como en la lista de "Solicitudes completas"."""
+    chat individual (cuando ya tiene todo, `mostrar_boton_gestionar=False` porque esa
+    página ya tiene su propio botón "Gestionado" aparte) como en la lista de
+    "Solicitudes completas" (`mostrar_boton_gestionar=True`, para gestionar sin tener
+    que entrar al chat — al hacerlo, esa tarjeta desaparece de esta lista porque deja
+    de estar en estado 'documentos_completos')."""
     nombre_servicio = NOMBRE_SERVICIO.get(solicitud.servicio, solicitud.servicio)
     docs_html = "".join(_fila_documento(d) for d in documentos_lista) or (
         '<div class="doc-fila-vacio">Sin documentos registrados.</div>'
@@ -867,6 +872,14 @@ def _recuadro_paciente(solicitud: Solicitud, documentos_lista: list[dict]) -> st
             _fila_dato("Régimen", solicitud.regimen),
         ]
     )
+    boton_gestionar = (
+        f"""
+        <form method="post" action="/dashboard/chats/{solicitud.telefono}/gestionado?volver=completas" class="recuadro-gestionar">
+          <button type="submit" class="boton-gestionado" title="Marca este caso como ya gestionado">Gestionado</button>
+        </form>"""
+        if mostrar_boton_gestionar
+        else ""
+    )
     return f"""
     <details class="recuadro-paciente">
       <summary class="recuadro-resumen">
@@ -877,6 +890,7 @@ def _recuadro_paciente(solicitud: Solicitud, documentos_lista: list[dict]) -> st
       <div class="recuadro-cuerpo">
         <div class="recuadro-datos">{filas}</div>
         <div class="recuadro-documentos">{docs_html}</div>
+        {boton_gestionar}
       </div>
     </details>"""
 
@@ -1053,6 +1067,7 @@ def render_chat(
   .dato-etiqueta {{ color: {GRAY}; margin-right: 6px; }}
   .dato-valor {{ color: {NAVY}; font-weight: 600; }}
   .recuadro-documentos {{ display: flex; flex-wrap: wrap; gap: 12px; border-top: 1px solid #D7E3F7; padding-top: 12px; }}
+  .recuadro-gestionar {{ margin-top: 12px; }}
   .doc-fila-vacio {{ font-size: 12px; color: {GRAY}; }}
   .doc-fila {{ font-size: 12px; color: {NAVY}; }}
   .doc-miniatura {{ display: flex; flex-direction: column; align-items: center; gap: 4px; width: 108px; text-decoration: none; }}
@@ -1146,7 +1161,7 @@ def render_solicitudes_completas(items: list[tuple[Solicitud, list[dict]]], emai
     """Página aparte con el recuadro completo de cada paciente que ya tiene todos sus
     documentos — para verlos todos de un vistazo sin entrar chat por chat."""
     if items:
-        tarjetas = "".join(_recuadro_paciente(s, docs) for s, docs in items)
+        tarjetas = "".join(_recuadro_paciente(s, docs, mostrar_boton_gestionar=True) for s, docs in items)
     else:
         tarjetas = '<p class="fila-azul-vacio">Todavía no hay ninguna solicitud con documentos completos.</p>'
 
@@ -1216,6 +1231,12 @@ def render_solicitudes_completas(items: list[tuple[Solicitud, list[dict]]], emai
   .dato-etiqueta {{ color: {GRAY}; margin-right: 6px; }}
   .dato-valor {{ color: {NAVY}; font-weight: 600; }}
   .recuadro-documentos {{ display: flex; flex-wrap: wrap; gap: 12px; border-top: 1px solid #D7E3F7; padding-top: 12px; }}
+  .recuadro-gestionar {{ margin-top: 12px; }}
+  .boton-gestionado {{
+    font-size: 12px; padding: 7px 16px; border-radius: 6px; border: 1px solid {GOOD};
+    background: {SURFACE}; color: {GOOD}; cursor: pointer; white-space: nowrap; font-weight: 600;
+  }}
+  .boton-gestionado:hover {{ background: #EAF7F0; }}
   .doc-fila-vacio {{ font-size: 12px; color: {GRAY}; }}
   .doc-fila {{ font-size: 12px; color: {NAVY}; }}
   .doc-miniatura {{ display: flex; flex-direction: column; align-items: center; gap: 4px; width: 108px; text-decoration: none; }}

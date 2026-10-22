@@ -748,13 +748,16 @@ def guardar_observaciones_chat(telefono: str, request: Request, observaciones: s
 
 
 @app.post("/dashboard/chats/{telefono}/gestionado")
-def marcar_chat_gestionado(telefono: str, request: Request):
+def marcar_chat_gestionado(telefono: str, request: Request, volver: str = ""):
     """Botón "Gestionado" — disponible en CUALQUIER chat que tenga una solicitud, sin
-    importar su estado (no solo naranja/azul). Un clic, sin escribir nada: conserva las
+    importar su estado (no solo naranja/azul), y también desde la lista de "Completas"
+    (ver _recuadro_paciente en dashboard.py). Un clic, sin escribir nada: conserva las
     notas que ya hubiera y cierra la solicitud — con su nombre propio (atendida/agendada)
     si venía de naranja/azul, o como 'atendida' genérica para cualquier otro estado
     abierto (ver `solicitudes.destino_gestion`). Si el chat no tiene ninguna solicitud,
-    o ya está gestionada, no hace nada."""
+    o ya está gestionada, no hace nada. `volver=completas` hace que, después de
+    gestionar, el agente vuelva a la lista de "Completas" (donde esa solicitud ya no
+    va a aparecer, por dejar de estar en 'documentos_completos') en vez de ir al chat."""
     email = _dashboard_email(request)
     if email is None:
         return RedirectResponse(url="/login", status_code=status.HTTP_303_SEE_OTHER)
@@ -765,7 +768,8 @@ def marcar_chat_gestionado(telefono: str, request: Request):
             conv = conversaciones.obtener(telefono)
             observaciones_actuales = conv.notas if conv else ""
             solicitudes.marcar_gestionada(solicitud.id, email, estado_final, observaciones_actuales)
-    return RedirectResponse(url=f"/dashboard/chats/{telefono}", status_code=status.HTTP_303_SEE_OTHER)
+    destino = "/dashboard/completas" if volver == "completas" else f"/dashboard/chats/{telefono}"
+    return RedirectResponse(url=destino, status_code=status.HTTP_303_SEE_OTHER)
 
 
 # ---------------------------------------------------------------------------
