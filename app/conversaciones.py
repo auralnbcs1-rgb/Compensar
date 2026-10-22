@@ -24,6 +24,7 @@ class Conversacion:
     ultimo_mensaje_en: str
     ultimo_mensaje_extracto: str
     notas: str = ""
+    pausada_en: str = ""  # desde cuándo un agente tiene el control (solo si pausada=True)
 
 
 @dataclass
@@ -48,6 +49,7 @@ def _row_to_conversacion(row: dict) -> Conversacion:
         ultimo_mensaje_en=row.get("ultimo_mensaje_en") or "",
         ultimo_mensaje_extracto=row.get("ultimo_mensaje_extracto") or "",
         notas=row.get("notas") or "",
+        pausada_en=row.get("pausada_en") or "",
     )
 
 
@@ -204,6 +206,22 @@ def reanudar(telefono: str) -> None:
 def esta_pausada(telefono: str) -> bool:
     conv = obtener(telefono)
     return conv.pausada if conv else False
+
+
+def pausadas(limit: int = 100) -> list[Conversacion]:
+    """Chats que un agente ya tomó (le quitó el control a Aurora) y que siguen así —
+    todavía no los reactivó ni los cerró. Para el panel de Reportes, ordenados del que
+    lleva más tiempo tomado al que menos, para que no se queden olvidados."""
+    resp = (
+        get_client()
+        .table("conversaciones")
+        .select("*")
+        .eq("pausada", True)
+        .order("pausada_en")
+        .limit(limit)
+        .execute()
+    )
+    return [_row_to_conversacion(row) for row in resp.data]
 
 
 def actualizar_nombre(telefono: str, nombre: str) -> None:

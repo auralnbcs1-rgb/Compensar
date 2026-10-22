@@ -181,6 +181,21 @@ def _fila_demorada(nombre: str, cedula: str, servicio_nombre: str, telefono: str
     </div>"""
 
 
+def _fila_tomado(nombre: str, telefono: str, pausada_por: str, dias_tomado: int) -> str:
+    if dias_tomado <= 0:
+        tiempo_txt = "hoy"
+    elif dias_tomado == 1:
+        tiempo_txt = "hace 1 día"
+    else:
+        tiempo_txt = f"hace {dias_tomado} días"
+    nombre_mostrar = nombre or "(sin nombre)"
+    return f"""
+    <div class="fila-tomado">
+      <div class="fila-tomado-nombre">{html.escape(nombre_mostrar)}</div>
+      <div class="fila-tomado-detalle">{html.escape(telefono)} · tomado por {html.escape(pausada_por or "?")} · {tiempo_txt}</div>
+    </div>"""
+
+
 def render_dashboard(stats: DashboardStats, email: str = "") -> str:
     proyeccion = (
         f"{int(stats.dias_para_vaciar_backlog)} días al ritmo actual"
@@ -206,6 +221,12 @@ def render_dashboard(stats: DashboardStats, email: str = "") -> str:
     )
     if not filas_demoradas:
         filas_demoradas = '<p class="fila-azul-vacio">Ninguno — todos los que están esperando documentos llevan menos de 72 horas.</p>'
+
+    filas_tomados = "".join(
+        _fila_tomado(c.nombre, c.telefono, c.pausada_por, c.dias_tomado) for c in stats.tomados_por_agente
+    )
+    if not filas_tomados:
+        filas_tomados = '<p class="fila-azul-vacio">Ningún chat está tomado por un agente ahora mismo.</p>'
 
     # Por trámite: histórico completo (desde siempre) vs. las que siguen abiertas ahora.
     filas_servicio = "".join(
@@ -321,6 +342,12 @@ def render_dashboard(stats: DashboardStats, email: str = "") -> str:
   .fila-demorada-cedula {{ font-weight: 400; color: {GRAY}; }}
   .fila-demorada-servicio {{ font-size: 12px; color: {GRAY}; margin-top: 2px; }}
   .fila-demorada-detalle {{ font-size: 12px; color: {ORANGE}; margin-top: 2px; font-weight: 600; }}
+  .fila-tomado {{
+    border-left: 4px solid {TEAL}; background: {BEIGE}1A; border-radius: 0 6px 6px 0;
+    padding: 8px 12px; margin-bottom: 8px; display: block;
+  }}
+  .fila-tomado-nombre {{ font-size: 13px; font-weight: 600; color: {NAVY}; }}
+  .fila-tomado-detalle {{ font-size: 12px; color: {GRAY}; margin-top: 2px; }}
   footer {{ margin-top: 40px; font-size: 12px; color: {GRAY}; }}
 </style>
 </head>
@@ -390,6 +417,15 @@ def render_dashboard(stats: DashboardStats, email: str = "") -> str:
           mandar nada nuevo — conviene hacerles seguimiento antes de que se enfríen.
         </p>
         {filas_demoradas}
+      </div>
+
+      <div class="panel panel-teal">
+        <h2>Tomados por un agente</h2>
+        <p class="panel-nota">
+          Chats donde un agente le quitó el control a Aurora (botón "Responder") y
+          todavía no lo ha devuelto ni cerrado — para que ninguno se quede olvidado.
+        </p>
+        {filas_tomados}
       </div>
 
       <div class="panel panel-blue">

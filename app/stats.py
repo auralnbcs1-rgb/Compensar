@@ -9,6 +9,7 @@ aquí funciona como meta de CONFIRMACIONES que alimentan esa cola, no de citas c
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta, timezone
 
+from app import conversaciones as conversaciones_module
 from app import solicitudes as solicitudes_module
 from app.backlog import pendientes_count
 from app.config import settings
@@ -37,6 +38,14 @@ class SolicitudEnEspera:
 
 
 @dataclass
+class ChatTomado:
+    nombre: str
+    telefono: str
+    pausada_por: str  # correo del agente que lo tomó
+    dias_tomado: int
+
+
+@dataclass
 class DashboardStats:
     confirmados_hoy: int
     meta_diaria: int
@@ -60,6 +69,9 @@ class DashboardStats:
     # Pacientes a los que les falta algún documento y llevan más de HORAS_ESPERA_DOCUMENTOS
     # sin mandar nada nuevo — para hacerles seguimiento antes de que se enfríen.
     esperando_documentos: list[SolicitudEnEspera] = field(default_factory=list)
+    # Chats que un agente ya tomó (le quitó el control a Aurora) y que siguen tomados —
+    # para que no se queden olvidados sin que nadie los reactive ni los cierre.
+    tomados_por_agente: list[ChatTomado] = field(default_factory=list)
 
 
 def _confirmados_en(desde: date, hasta: date) -> int:
@@ -145,6 +157,24 @@ def get_dashboard_stats() -> DashboardStats:
             )
         )
 
+    tomados_por_agente = []
+    for c in conversaciones_module.pausadas(limit=100):
+        dias_tomado = 0
+        if c.pausada_en:
+            try:
+                desde = datetime.fromisoformat(c.pausada_en.replace("Z", "+00:00"))
+                dias_tomado = max(0, (ahora - desde).days)
+            except ValueError:
+                pass
+        tomados_por_agente.append(
+            ChatTomado(
+                nombre=c.nombre,
+                telefono=c.telefono,
+                pausada_por=c.pausada_por,
+                dias_tomado=dias_tomado,
+            )
+        )
+
     return DashboardStats(
         confirmados_hoy=_confirmados_en(hoy, hoy),
         meta_diaria=settings.daily_goal,
@@ -159,6 +189,7 @@ def get_dashboard_stats() -> DashboardStats:
         servicio_abiertas=servicio_abiertas,
         gestionados_hoy=gestionados_hoy,
         gestionados_semana=gestionados_semana,
+        tomados_por_agente=tomados_por_agente,
         gestionados_mes=gestionados_mes,
         esperando_documentos=esperando_documentos,
     )
