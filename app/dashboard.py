@@ -197,12 +197,6 @@ def _fila_tomado(nombre: str, telefono: str, pausada_por: str, dias_tomado: int)
 
 
 def render_dashboard(stats: DashboardStats, email: str = "") -> str:
-    proyeccion = (
-        f"{int(stats.dias_para_vaciar_backlog)} días al ritmo actual"
-        if stats.dias_para_vaciar_backlog is not None
-        else "sin datos suficientes aún"
-    )
-
     documentos_completos = stats.solicitudes_por_estado.get("documentos_completos", 0)
     pendiente_docs = stats.solicitudes_por_estado.get("pendiente_documentos", 0)
     orden_vencida = stats.solicitudes_por_estado.get("orden_vencida", 0)
@@ -375,12 +369,6 @@ def render_dashboard(stats: DashboardStats, email: str = "") -> str:
           <button type="submit" class="boton-excel">⬇ Descargar Excel</button>
         </div>
       </form>
-
-      <div class="seccion-titulo">Backlog</div>
-      <div class="tiles">
-        {_tile("Pendientes en backlog", str(stats.pendientes), color=NAVY, chip=DORADO, icono="📋")}
-        {_tile("Backlog se vacía en", proyeccion, f"ritmo: {stats.ritmo_diario_promedio}/día", color=NAVY, chip=TURQUESA, icono="⏳")}
-      </div>
 
       <div class="seccion-titulo">Documentos</div>
       <div class="tiles">
