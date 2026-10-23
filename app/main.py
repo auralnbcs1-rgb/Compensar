@@ -403,6 +403,17 @@ def _manejar_imagen(phone: str, solicitud, contenido: bytes, content_type: str) 
 
     nombre_servicio, _ = _datos_servicio(solicitud.servicio)
 
+    if solicitud.servicio in solicitudes.SERVICIOS_SIN_DOCUMENTOS:
+        # Control, Mantenimiento y Entrega Compensar nunca piden documentos. Si de todos
+        # modos llega una imagen (por ejemplo, la solicitud ya está en 'documentos_completos'
+        # esperando al agente), no hay nada que clasificar — e intentarlo podría incluso
+        # devolver por error la solicitud a 'pendiente_documentos' sin que haga falta.
+        _responder(
+            phone,
+            f"Tu trámite de {nombre_servicio} ya quedó completo y en la cola de nuestro equipo — no necesitas enviar ningún documento 🙂",
+        )
+        return {"status": "imagen_no_necesaria"}
+
     clasificacion = clasificar(contenido, content_type, nombre_servicio)
 
     if clasificacion.tipo == "sin_clasificar":
@@ -464,9 +475,16 @@ def _sincronizar_backlog_si_aplica(solicitud) -> None:
 
 def _manejar_texto_con_solicitud(phone: str, solicitud, mensaje: str) -> dict:
     nombre_servicio, _ = _datos_servicio(solicitud.servicio)
-    faltantes = sorted(
-        set(solicitudes.DOCUMENTOS_REQUERIDOS[solicitud.requiere_autorizacion]) - documentos.tipos_recibidos(solicitud.id)
-    )
+    if solicitud.servicio in solicitudes.SERVICIOS_SIN_DOCUMENTOS:
+        # Control, Mantenimiento y Entrega Compensar nunca piden documentos — si el
+        # paciente vuelve a escribir estando ya en 'documentos_completos' (por ejemplo
+        # preguntando por su trámite), no hay nada "faltante" que pedirle; lo contrario
+        # haría que Aurora le pidiera una orden clínica que ese trámite nunca necesitó.
+        faltantes: list[str] = []
+    else:
+        faltantes = sorted(
+            set(solicitudes.DOCUMENTOS_REQUERIDOS[solicitud.requiere_autorizacion]) - documentos.tipos_recibidos(solicitud.id)
+        )
     ctx = SolicitudContext(nombre=solicitud.nombre, servicio_nombre=nombre_servicio, documentos_faltantes=faltantes)
 
     history = session_store.get_history(phone)

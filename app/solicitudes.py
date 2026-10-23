@@ -47,7 +47,13 @@ SERVICIOS_SIN_DOCUMENTOS = {"mantenimiento", "entrega_compensar", "control"}
 # agente (ver _comenzar_recoleccion_datos en main.py).
 SERVICIOS_SIN_DATOS_EXTRA = {"control"}
 
-ESTADOS_ABIERTOS = ("pendiente_documentos", "orden_vencida", "requiere_humano")
+#   "documentos_completos" está incluido a propósito: esa solicitud ya no necesita nada
+#   del paciente, pero SIGUE sin gestionar — si se le quitara de aquí, `abierta_por_telefono`
+#   (usada por main.py para decidir si el paciente ya tiene un trámite en curso) dejaría
+#   de verla, y si el paciente vuelve a escribir antes de que un agente la tome, Aurora
+#   le abriría una solicitud duplicada para el mismo trámite en vez de seguir con la que
+#   ya existe (esto pasó de verdad: dos solicitudes de "Control" para el mismo paciente).
+ESTADOS_ABIERTOS = ("pendiente_documentos", "orden_vencida", "requiere_humano", "documentos_completos")
 
 
 @dataclass
