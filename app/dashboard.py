@@ -960,7 +960,7 @@ def render_chat(
     boton_gestionado = ""
     if solicitud is not None and solicitud.estado not in ("atendida", "agendada"):
         boton_gestionado = f"""
-        <form method="post" action="/dashboard/chats/{conv.telefono}/gestionado" style="display:inline;">
+        <form method="post" action="/dashboard/chats/{conv.telefono}/gestionado?solicitud_id={solicitud.id}" style="display:inline;">
           <button type="submit" class="boton-gestionado" title="Marca este caso como ya gestionado">Gestionado</button>
         </form>"""
 
