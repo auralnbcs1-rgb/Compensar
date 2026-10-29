@@ -26,7 +26,7 @@ with open(settings.system_prompt_path, encoding="utf-8") as f:
 
 SELECCIONAR_SERVICIO_TOOL = {
     "name": "seleccionar_servicio",
-    "description": "Identifica a cuál de los 5 trámites del menú se refiere el mensaje del paciente, si se puede.",
+    "description": "Identifica a cuál de las opciones del menú de Aurora se refiere el mensaje del paciente, si se puede.",
     "input_schema": {
         "type": "object",
         "properties": {
@@ -52,7 +52,12 @@ def interpretar_seleccion_menu(mensaje: str) -> Optional[str]:
             f"Widex Colombia S.A.S. Estas son las opciones del menú:\n{opciones}\n\n"
             "Identifica a cuál se refiere el mensaje del paciente, si es que se refiere a "
             "alguna con claridad. No adivines si el mensaje es ambiguo o no tiene nada que "
-            "ver con el menú."
+            "ver con el menú.\n\n"
+            "Pista para la opción 'Valoración auditiva particular': el paciente no siempre va "
+            "a usar esa palabra. Si dice que no tiene EPS, convenio o Compensar, que quiere "
+            "pagar directamente, o algo parecido a 'examen particular' / 'audiometría por mi "
+            "cuenta' — y por lo demás parece que busca una cita o examen de audición — "
+            "identifica esa opción."
         ),
         tools=[SELECCIONAR_SERVICIO_TOOL],
         tool_choice={"type": "tool", "name": "seleccionar_servicio"},

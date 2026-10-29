@@ -1,6 +1,8 @@
-"""Capa de datos sobre `solicitudes` — un trámite de un paciente para uno de los 7
+"""Capa de datos sobre `solicitudes` — un trámite de un paciente para uno de los 8
 servicios de Aurora (evaluación y adaptación, prueba de audífono, control, evaluación
-tinnitus, terapia tinnitus, mantenimiento, entrega de audífonos por Compensar).
+tinnitus, terapia tinnitus, mantenimiento, entrega de audífonos por Compensar, y
+valoración auditiva particular — este último sin convenio, para quien quiere pagar
+directamente).
 Independiente de `backlog`, que sigue siendo solo el backlog de entrega de audífonos de
 Compensar (ver `_sincronizar_backlog_si_aplica` en main.py para cómo se cruzan cuando
 aplica).
@@ -22,6 +24,7 @@ SERVICIOS = {
     "5": ("terapia_tinnitus", "Terapia Tinnitus", True),
     "6": ("mantenimiento", "Mantenimiento", False),
     "7": ("entrega_compensar", "Entrega de audífonos (Compensar)", False),
+    "8": ("valoracion_particular", "Valoración auditiva particular", False),
 }
 
 NOMBRE_SERVICIO = {codigo: nombre for _, (codigo, nombre, _) in SERVICIOS.items()}
@@ -38,14 +41,19 @@ DOCUMENTOS_REQUERIDOS: dict[bool, list[str]] = {
 # en vez de pedir documentos; 'entrega_compensar' primero confirma con el paciente que
 # ya se hizo la evaluación (ver main.py) y luego sigue este mismo camino sin documentos;
 # 'control' no pide documentos ni los datos extra de abajo (ver SERVICIOS_SIN_DATOS_EXTRA).
-SERVICIOS_SIN_DOCUMENTOS = {"mantenimiento", "entrega_compensar", "control"}
+# 'valoracion_particular' tampoco pide documentos — es sin convenio, el paciente paga
+# directamente; su mensaje de cierre manda el enlace de agendamiento en vez de avisar
+# que un agente lo va a contactar (ver MENSAJE_VALORACION_PARTICULAR en main.py).
+SERVICIOS_SIN_DOCUMENTOS = {"mantenimiento", "entrega_compensar", "control", "valoracion_particular"}
 
 # Trámites que, además de no pedir documentos, tampoco piden los datos adicionales de
 # CAMPOS (fecha de nacimiento, dirección, régimen, segundo teléfono, correo) — con
 # cédula, nombre completo (que se piden siempre) y el teléfono de WhatsApp (que ya se
 # conoce, es el mismo por el que está escribiendo) alcanza para dejarlo listo para el
-# agente (ver _comenzar_recoleccion_datos en main.py).
-SERVICIOS_SIN_DATOS_EXTRA = {"control"}
+# agente (ver _comenzar_recoleccion_datos en main.py). 'valoracion_particular' entra aquí
+# por la misma razón que 'control': no hay convenio de por medio, no hace falta régimen
+# ni un segundo teléfono para que quede lista.
+SERVICIOS_SIN_DATOS_EXTRA = {"control", "valoracion_particular"}
 
 #   "documentos_completos" está incluido a propósito: esa solicitud ya no necesita nada
 #   del paciente, pero SIGUE sin gestionar — si se le quitara de aquí, `abierta_por_telefono`

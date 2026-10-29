@@ -14,6 +14,18 @@ _PALABRAS_CLAVE = {
     "3": ["control"],
     "5": ["terapia"],
     "6": ["mantenimiento", "limpieza", "revision", "chequeo"],
+    "8": [
+        "particular",
+        "sin eps",
+        "sin convenio",
+        "no tengo compensar",
+        "no tengo convenio",
+        "pagar yo",
+        "pagar directamente",
+        "valoracion particular",
+        "examen particular",
+        "audiometria particular",
+    ],
 }
 
 _TABLA_TILDES = str.maketrans("áéíóúñ", "aeioun")
@@ -29,7 +41,7 @@ def coincidencia_local(mensaje: str) -> str | None:
     hay una coincidencia clara (y hay que preguntarle a Claude o mostrar el menú)."""
     texto = _sin_tildes(mensaje.strip().lower())
 
-    solo_numero = re.match(r"^\D*([1-6])\D*$", texto)
+    solo_numero = re.match(r"^\D*([1-8])\D*$", texto)
     if solo_numero:
         return SERVICIOS[solo_numero.group(1)][0]
 

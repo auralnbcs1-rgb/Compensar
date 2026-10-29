@@ -80,6 +80,14 @@ MENSAJE_ENTREGA_COMPENSAR = (
     "Responde *Sí* o *No*."
 )
 
+MENSAJE_VALORACION_PARTICULAR = (
+    "¡Claro que sí! 😊 En Aural hacemos *valoraciones auditivas particulares*, no "
+    "necesitas EPS ni convenio.\n\n"
+    "¿En qué ciudad te queda mejor? Así te indico la sede más cercana.\n\n"
+    "Puedes agendar directamente aquí 👉 agendaaural.netlify.app\n"
+    "Eliges la sede, el día y la hora que te sirvan."
+)
+
 MENSAJE_ENTREGA_SIN_EVALUACION = (
     "Para poder entregarte los audífonos, primero debes realizarte la "
     "*Evaluación y adaptación de prótesis y ayudas auditivas*.\n\n"
@@ -385,6 +393,8 @@ def _crear_solicitud_y_pedir_documentos(phone: str, cedula: str, nombre: str, co
         solicitudes.actualizar_estado(solicitud.id, "documentos_completos")
         if codigo_servicio == "mantenimiento":
             _responder(phone, MENSAJE_MANTENIMIENTO)
+        elif codigo_servicio == "valoracion_particular":
+            _responder(phone, MENSAJE_VALORACION_PARTICULAR)
         else:
             _responder(phone, mensajes.documentos_completos(nombre_servicio))
         return
