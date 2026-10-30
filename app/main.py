@@ -24,7 +24,7 @@ Endpoints:
 - POST /dashboard/chats/{telefono}/observaciones → un agente guarda una nota del chat (y cierra el caso si aplica)
 - POST /dashboard/chats/{telefono}/gestionado     → un agente quita el color (naranja/azul) del chat con un solo clic
 - GET  /dashboard/completas               → recuadro completo de cada paciente con documentos completos
-- GET  /dashboard/reportes/excel           → descarga el Excel de Reportes (resumen diario, gestionados, preguntas frecuentes)
+- GET  /dashboard/reportes/excel           → descarga el Excel de Reportes (resumen diario, pendientes por gestionar, gestionados, preguntas frecuentes)
 
 Ejecutar en desarrollo:
     uvicorn app.main:app --reload --port 8000
@@ -596,10 +596,10 @@ def dashboard_reportes(request: Request):
 @app.get("/dashboard/reportes/excel")
 def dashboard_reportes_excel(request: Request, desde: str = "", hasta: str = ""):
     """Descarga el Excel de Reportes para el rango de fechas elegido en el panel (ver
-    el formulario en render_dashboard) — resumen diario, gestionados por día y en
-    detalle, y preguntas frecuentes agrupadas por tema con Claude (ver
-    app/reportes_excel.py). Si las fechas vienen vacías o mal escritas, usa los
-    últimos 30 días por defecto en vez de fallar."""
+    el formulario en render_dashboard) — resumen diario, el backlog actual de
+    pendientes por gestionar, gestionados por día y en detalle, y preguntas frecuentes
+    agrupadas por tema con Claude (ver app/reportes_excel.py). Si las fechas vienen
+    vacías o mal escritas, usa los últimos 30 días por defecto en vez de fallar."""
     email = _dashboard_email(request)
     if email is None:
         return RedirectResponse(url="/login", status_code=status.HTTP_303_SEE_OTHER)
@@ -620,8 +620,13 @@ def dashboard_reportes_excel(request: Request, desde: str = "", hasta: str = "")
     gestionadas = solicitudes.gestionadas_entre(fecha_desde, fecha_hasta)
     mensajes_pacientes = conversaciones.mensajes_entrantes_entre(fecha_desde, fecha_hasta)
     temas = agrupar_preguntas_frecuentes(mensajes_pacientes)
+    # Backlog ACTUAL de lo que falta por gestionar (documentos completos, requiere
+    # asesor, pendiente de documentos, orden vencida) — no se filtra por el rango de
+    # fechas elegido, porque lo que importa aquí es lo que sigue pendiente HOY, sin
+    # importar cuándo se creó (ver hoja "Pendientes por gestionar" en reportes_excel.py).
+    abiertas = solicitudes.abiertas(limit=1000)
 
-    contenido = construir_excel(fecha_desde, fecha_hasta, cohorte, gestionadas, temas)
+    contenido = construir_excel(fecha_desde, fecha_hasta, cohorte, gestionadas, temas, abiertas=abiertas)
     nombre_archivo = f"aurora_reportes_{fecha_desde.isoformat()}_a_{fecha_hasta.isoformat()}.xlsx"
     return Response(
         content=contenido,

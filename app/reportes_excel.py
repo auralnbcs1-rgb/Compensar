@@ -1,21 +1,25 @@
 """Genera el Excel descargable de la página de Reportes (ver la ruta
 /dashboard/reportes/excel en main.py).
 
-Junta tres cosas en un solo archivo, cada una con su propia hoja:
+Junta cuatro cosas en un solo archivo, cada una con su propia hoja:
 
 1. Resumen diario — a partir de con qué trámite empezó cada solicitud (creado_en, que
    nunca cambia) y en qué quedó ahora mismo (estado actual): cuántas llegaron con
    documentos completos, cuántas requirieron asesor, cuántas siguen pendientes.
-2. Gestionados por día + detalle — usando actualizado_en, que para una solicitud ya
+2. Pendientes por gestionar — el backlog ACTUAL (no limitado al rango de fechas
+   elegido): cada solicitud que todavía no se gestionó, sin importar cuándo se creó,
+   con su estado, de quién es, y cuántos días lleva esperando (ver
+   `solicitudes.abiertas`).
+3. Gestionados por día + detalle — usando actualizado_en, que para una solicitud ya
    gestionada sí refleja exactamente el momento de la gestión (ver
    `solicitudes.gestionadas_entre`).
-3. Preguntas frecuentes — le pasamos a Claude los mensajes de los pacientes en el
+4. Preguntas frecuentes — le pasamos a Claude los mensajes de los pacientes en el
    rango (sin teléfono ni nombre) y le pedimos que los agrupe por tema.
 """
 import io
 from collections import defaultdict
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 
 from anthropic import Anthropic
 from openpyxl import Workbook
@@ -178,6 +182,7 @@ def construir_excel(
     cohorte: list[Solicitud],
     gestionadas: list[Solicitud],
     temas: list[TemaPregunta],
+    abiertas: list[Solicitud] | None = None,
 ) -> bytes:
     wb = Workbook()
 
@@ -222,7 +227,54 @@ def construir_excel(
 
     _autoancho(ws1, columnas1, [14, 18, 20, 18, 22, 24])
 
-    # --- Hoja 2: Gestionados por día (según cuándo se GESTIONÓ) ---------------------
+    # --- Hoja 2: Pendientes por gestionar (backlog ACTUAL, no limitado al rango) ----
+    # A diferencia de "Resumen diario" (que solo cuenta lo que se INICIÓ en el rango
+    # elegido), esta hoja muestra, ahora mismo, cada solicitud que todavía no se
+    # gestionó — sin importar cuándo empezó — para que no se pierda de vista una que
+    # lleva semanas esperando solo porque quedó fuera del rango de fechas del reporte.
+    ws_pend = wb.create_sheet("Pendientes por gestionar", 1)
+    ws_pend.cell(row=1, column=1, value="Aurora — Pendientes por gestionar (al momento de generar este Excel)").font = Font(
+        bold=True, size=13, color=NAVY
+    )
+    ws_pend.cell(
+        row=2,
+        column=1,
+        value="Documentos completos, requieren asesor, pendientes de documentos y orden vencida — todo lo que falta por gestionar ahora mismo, no solo lo del rango de fechas elegido.",
+    ).font = Font(italic=True, color="FF666666")
+
+    columnas_pend = ["Estado", "Nombre", "Cédula", "Teléfono", "Trámite", "Fecha de creación", "Días esperando"]
+    _encabezado(ws_pend, 4, columnas_pend)
+
+    ahora = datetime.now(timezone.utc)
+
+    def _dias_esperando(iso: str) -> str:
+        if not iso:
+            return ""
+        try:
+            desde_dt = datetime.fromisoformat(iso.replace("Z", "+00:00"))
+        except ValueError:
+            return ""
+        return str(max(0, (ahora - desde_dt).days))
+
+    fila_actual = 5
+    # Las más urgentes (más días esperando) primero.
+    for s in sorted(abiertas or [], key=lambda s: s.actualizado_en or "", reverse=False):
+        ws_pend.append([
+            ETIQUETA_ESTADO.get(s.estado, s.estado),
+            s.nombre,
+            s.cedula,
+            s.telefono,
+            NOMBRE_SERVICIO.get(s.servicio, s.servicio),
+            _dia(s.creado_en),
+            _dias_esperando(s.actualizado_en),
+        ])
+        fila_actual += 1
+    if not abiertas:
+        ws_pend.cell(row=fila_actual, column=1, value="No hay ninguna solicitud pendiente por gestionar ahora mismo.")
+    _autoancho(ws_pend, columnas_pend, [20, 26, 14, 16, 34, 18, 16])
+    ws_pend.freeze_panes = "A5"
+
+    # --- Hoja 3: Gestionados por día (según cuándo se GESTIONÓ) ---------------------
     ws2 = wb.create_sheet("Gestionados por día")
     columnas2 = ["Fecha de gestión", "Cuántos se gestionaron"]
     _encabezado(ws2, 1, columnas2, color=TEAL)
@@ -238,7 +290,7 @@ def construir_excel(
         ws2.cell(row=fila_actual, column=1, value="No se gestionó ningún caso en este rango de fechas.")
     _autoancho(ws2, columnas2, [18, 22])
 
-    # --- Hoja 3: Detalle de gestionados ---------------------------------------------
+    # --- Hoja 4: Detalle de gestionados ---------------------------------------------
     ws3 = wb.create_sheet("Detalle de gestionados")
     columnas3 = ["Fecha de gestión", "Nombre", "Cédula", "Teléfono", "Trámite", "Resultado", "Gestionado por", "Observaciones"]
     _encabezado(ws3, 1, columnas3)
@@ -261,7 +313,7 @@ def construir_excel(
     for fila in ws3.iter_rows(min_row=2, max_col=8):
         fila[7].alignment = Alignment(wrap_text=True, vertical="top")
 
-    # --- Hoja 4: Preguntas frecuentes -------------------------------------------------
+    # --- Hoja 5: Preguntas frecuentes -------------------------------------------------
     ws4 = wb.create_sheet("Preguntas frecuentes")
     columnas4 = ["Tema", "Cantidad de mensajes", "Ejemplo 1", "Ejemplo 2", "Ejemplo 3"]
     _encabezado(ws4, 1, columnas4, color=TEAL)

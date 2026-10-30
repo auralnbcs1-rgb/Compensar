@@ -307,6 +307,25 @@ def contar_gestionados_desde(desde_iso: str) -> int:
     return resp.count or 0
 
 
+def abiertas(limit: int = 500) -> list[Solicitud]:
+    """Todas las solicitudes que todavía no se han gestionado (cualquier estado de
+    ESTADOS_ABIERTOS: pendiente de documentos, orden vencida, requiere asesor, o
+    documentos completos esperando que un agente las tome) — el backlog completo de
+    "lo que falta por gestionar" ahora mismo, sin importar cuándo se creó cada una. Lo
+    usa el Excel de Reportes para la hoja "Pendientes por gestionar" (ver
+    reportes_excel.py), aparte del resumen por rango de fechas que ya tenía."""
+    resp = (
+        get_client()
+        .table("solicitudes")
+        .select("*")
+        .in_("estado", list(ESTADOS_ABIERTOS))
+        .order("actualizado_en")
+        .limit(limit)
+        .execute()
+    )
+    return [_row_to_solicitud(row) for row in resp.data]
+
+
 def gestionadas(limit: int = 50) -> list[Solicitud]:
     """Solicitudes ya gestionadas por un agente (atendida o agendada, ver
     `marcar_gestionada`) — para el filtro "Gestionados" del panel de chats, separado
