@@ -288,7 +288,40 @@ def construir_excel(
         fila_actual += 1
     if not gestion_por_dia:
         ws2.cell(row=fila_actual, column=1, value="No se gestionó ningún caso en este rango de fechas.")
-    _autoancho(ws2, columnas2, [18, 22])
+
+    # --- Mismo hoja: cuántos se gestionaron de cada trámite, en este rango ----------
+    fila_tramite = fila_actual + 2
+    columnas2b = ["Trámite", "Gestionados en el rango", "Atendida", "Agendada"]
+    _encabezado(ws2, fila_tramite, columnas2b, color=TEAL)
+
+    por_tramite: dict[str, dict[str, int]] = defaultdict(lambda: {"total": 0, "atendida": 0, "agendada": 0})
+    for s in gestionadas:
+        fila = por_tramite[s.servicio]
+        fila["total"] += 1
+        if s.estado == "atendida":
+            fila["atendida"] += 1
+        elif s.estado == "agendada":
+            fila["agendada"] += 1
+
+    fila_actual2 = fila_tramite + 1
+    # Mismo orden que el menú de Aurora (ver solicitudes.SERVICIOS), no alfabético, para
+    # que se lea igual de fácil que el resto del reporte — y solo los trámites que sí
+    # tuvieron al menos una gestión en el rango, para no llenar la hoja de ceros.
+    for codigo in NOMBRE_SERVICIO:
+        if codigo not in por_tramite:
+            continue
+        datos = por_tramite[codigo]
+        ws2.cell(row=fila_actual2, column=1, value=NOMBRE_SERVICIO.get(codigo, codigo))
+        ws2.cell(row=fila_actual2, column=2, value=datos["total"])
+        ws2.cell(row=fila_actual2, column=3, value=datos["atendida"])
+        ws2.cell(row=fila_actual2, column=4, value=datos["agendada"])
+        fila_actual2 += 1
+    if not por_tramite:
+        ws2.cell(row=fila_actual2, column=1, value="No se gestionó ningún caso en este rango de fechas.")
+
+    # Las dos tablas comparten columnas 1-2 (la de abajo además usa 3-4), así que los
+    # anchos se fijan una sola vez al final, pensando en ambas.
+    _autoancho(ws2, ["", "", "", ""], [34, 24, 14, 14])
 
     # --- Hoja 4: Detalle de gestionados ---------------------------------------------
     ws3 = wb.create_sheet("Detalle de gestionados")
