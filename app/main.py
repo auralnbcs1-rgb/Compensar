@@ -535,7 +535,6 @@ def _tarea_recordatorios() -> None:
 @app.on_event("startup")
 def _iniciar_tarea_recordatorios() -> None:
     threading.Thread(target=_tarea_recordatorios, daemon=True).start()
-    backlog.update_estado(solicitud.telefono, "requiere_agendamiento")
 
 
 # ---------------------------------------------------------------------------
