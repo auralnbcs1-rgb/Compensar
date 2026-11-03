@@ -42,7 +42,7 @@ ETIQUETA_ESTADO = {
     "requiere_humano": "Requiere asesor",
     "atendida": "Atendida",
     "pendiente_documentos": "Pendiente de documentos",
-    "orden_vencida": "Orden vencida / incompleta",
+    "orden_vencida": "Autorización vencida",
     "no_interesado": "No interesado",
 }
 

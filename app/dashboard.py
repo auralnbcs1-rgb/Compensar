@@ -374,7 +374,7 @@ def render_dashboard(stats: DashboardStats, email: str = "") -> str:
       <div class="tiles">
         {_tile("Documentos completos", str(documentos_completos), "listos para el agente", BLUE, icono="✅")}
         {_tile("Esperando documentos", str(pendiente_docs), color=NAVY, chip=TURQUESA, icono="⏱")}
-        {_tile("Orden vencida", str(orden_vencida), "hay que pedir una nueva", ORANGE, icono="⚠️")}
+        {_tile("Autorización vencida", str(orden_vencida), "hay que pedir una nueva", ORANGE, icono="⚠️")}
         {_tile("Esperando hace +72h", str(len(stats.esperando_documentos)), "sin novedad del paciente", ORANGE, icono="⌛")}
         {_tile("Requieren asesor", str(requiere_asesor), "franja naranja 🟠 — pendientes de que un agente los atienda", ORANGE, icono="🟠")}
         {_tile("Tomados por un agente", str(len(stats.tomados_por_agente)), "en proceso de agenda", TEAL, icono="🗣️")}

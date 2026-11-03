@@ -1,22 +1,24 @@
 """Clasificación de documentos con Claude vision.
 
 Para cada imagen que manda un paciente, determina qué tipo de documento es (orden
-clínica, autorización de servicio, cédula, o ninguno reconocible) y, según el tipo, si
-sigue vigente — nunca las dos validaciones a la vez:
+clínica, autorización de servicio, cédula, o ninguno reconocible) y, solo para
+autorizacion_servicio, si sigue vigente:
 
-- orden_clinica: vigente por EXPEDICIÓN — su fecha_expedicion, si se alcanza a leer con
-  confianza, comparada contra ORDEN_VIGENCIA_DIAS.
-- autorizacion_servicio: vigente por FECHA DE VENCIMIENTO — si el documento trae impresa
-  su propia fecha de "VÁLIDO HASTA" / "VIGENTE HASTA", esa es la fuente de verdad: se usa
-  tal cual, sin recalcular nada por nuestra cuenta. Si no la trae, no se puede validar y
-  queda en None.
+- orden_clinica: NO tiene fecha de vencimiento — se valida por CONTENIDO (que especifique
+  marca, modelo, tecnología, circuito, lateralidad y cantidad), nunca por fecha. Se
+  reporta fecha_expedicion solo como referencia para quien revise el caso; `vigente`
+  siempre queda en None para este tipo — nunca se usa para rechazarla.
+- autorizacion_servicio: esta sí vence — vigente por FECHA DE VENCIMIENTO: si el
+  documento trae impresa su propia fecha de "VÁLIDO HASTA" / "VIGENTE HASTA", esa es la
+  fuente de verdad: se usa tal cual, sin recalcular nada por nuestra cuenta. Si no la
+  trae, no se puede validar y queda en None.
 
 Nunca asume vigencia cuando no puede leer la fecha que corresponde — ese caso queda para
 que lo revise un agente humano (vigente=None).
 """
 import base64
 from dataclasses import dataclass
-from datetime import date, timedelta
+from datetime import date
 from typing import Optional
 
 from anthropic import Anthropic
@@ -95,8 +97,9 @@ def clasificar(contenido: bytes, content_type: str, servicio_nombre: str) -> Cla
             "cédula de ciudadanía, por delante o por detrás). Si la imagen no es clara o no "
             "corresponde a ninguno de esos tres, usa sin_clasificar.\n\n"
             "La validación es distinta según el tipo — nunca mezcles las dos:\n"
-            "- orden_clinica: reporta su fecha_expedicion (AAAA-MM-DD) solo si la lees con "
-            "confianza — nunca la inventes.\n"
+            "- orden_clinica: NO vence, se valida por su contenido (no por fecha). Reporta "
+            "su fecha_expedicion (AAAA-MM-DD) solo como referencia, si la lees con "
+            "confianza — nunca la inventes, y nunca la uses para decidir si es válida.\n"
             "- autorizacion_servicio: busca si trae impresa una fecha explícita de hasta "
             "cuándo es válida ('VÁLIDO HASTA', 'VIGENTE HASTA', 'VENCE EL') y repórtala en "
             "fecha_vencimiento. CUIDADO: estos documentos de Compensar suelen traer DOS "
@@ -136,13 +139,12 @@ def clasificar(contenido: bytes, content_type: str, servicio_nombre: str) -> Cla
     fecha_expedicion = None
     vigente = None
     if tipo == "orden_clinica" and fecha_str:
+        # Solo como referencia (para quien revise el caso) — la orden clínica no vence
+        # por fecha, así que `vigente` se queda en None aunque sí se lea la fecha.
         try:
             fecha_expedicion = date.fromisoformat(fecha_str)
-            limite = date.today() - timedelta(days=settings.orden_vigencia_dias)
-            vigente = fecha_expedicion >= limite
         except ValueError:
             fecha_expedicion = None
-            vigente = None  # fecha ilegible — que lo revise un agente, no se asume nada
     elif tipo == "autorizacion_servicio" and vencimiento_str:
         try:
             fecha_vencimiento = date.fromisoformat(vencimiento_str)

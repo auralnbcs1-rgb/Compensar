@@ -82,6 +82,7 @@ class Solicitud:
     observaciones: str = ""
     actualizado_en: str = ""
     creado_en: str = ""
+    recordatorio_enviado_en: str = ""  # "" = todavía no se le mandó el recordatorio automático
 
 
 def _row_to_solicitud(row: dict) -> Solicitud:
@@ -102,6 +103,7 @@ def _row_to_solicitud(row: dict) -> Solicitud:
         observaciones=row.get("observaciones") or "",
         actualizado_en=row.get("actualizado_en") or "",
         creado_en=row.get("creado_en") or "",
+        recordatorio_enviado_en=row.get("recordatorio_enviado_en") or "",
     )
 
 
@@ -182,6 +184,33 @@ def ultima_por_telefono(telefono: str) -> Optional[Solicitud]:
 def actualizar_estado(solicitud_id: int, estado: str) -> None:
     get_client().table("solicitudes").update(
         {"estado": estado, "actualizado_en": datetime.now(timezone.utc).isoformat()}
+    ).eq("id", solicitud_id).execute()
+
+
+def pendientes_para_recordatorio(horas: float = 5, limit: int = 100) -> list[Solicitud]:
+    """Solicitudes en 'pendiente_documentos' que llevan más de `horas` sin ninguna
+    novedad (actualizado_en no se mueve, ni siquiera con un documento parcial) y todavía
+    no recibieron el recordatorio automático — para mandarles uno, una sola vez (ver
+    marcar_recordatorio_enviado y _tarea_recordatorios en main.py)."""
+    limite = datetime.now(timezone.utc) - timedelta(hours=horas)
+    resp = (
+        get_client()
+        .table("solicitudes")
+        .select("*")
+        .eq("estado", "pendiente_documentos")
+        .is_("recordatorio_enviado_en", "null")
+        .lte("actualizado_en", limite.isoformat())
+        .limit(limit)
+        .execute()
+    )
+    return [_row_to_solicitud(row) for row in resp.data]
+
+
+def marcar_recordatorio_enviado(solicitud_id: int) -> None:
+    """Deja constancia de que ya se le mandó el recordatorio automático de documentos a
+    esta solicitud, para que pendientes_para_recordatorio no la vuelva a traer."""
+    get_client().table("solicitudes").update(
+        {"recordatorio_enviado_en": datetime.now(timezone.utc).isoformat()}
     ).eq("id", solicitud_id).execute()
 
 

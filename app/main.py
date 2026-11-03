@@ -5,8 +5,11 @@ Flujo INBOUND: el paciente escribe primero. El primer mensaje siempre muestra el
 de los trámites de Aurora. Según la opción elegida, el bot pide la cédula (si no la
 conocemos ya por el backlog de entrega de audífonos) y los documentos que ese trámite
 necesita — orden clínica siempre; autorización de servicio y cédula además, para las
-opciones marcadas con * en el menú. Los documentos se clasifican y la vigencia de la
-orden se valida con Claude (vision, ver vision_client.py). Aurora **nunca** ofrece ni
+opciones marcadas con * en el menú. Los documentos se clasifican con Claude (vision,
+ver vision_client.py); la orden clínica se valida por contenido (no vence), y la
+autorización de servicio por su fecha de vencimiento impresa. Si un trámite se queda sin
+novedad en 'pendiente_documentos' más de HORAS_RECORDATORIO_DOCUMENTOS, se manda un
+recordatorio automático una sola vez (ver _tarea_recordatorios). Aurora **nunca** ofrece ni
 confirma una hora de cita — solo avisa que un agente de atención al cliente se va a
 comunicar, en las sedes/horario fijos de Usaquén y Javeriana.
 
@@ -31,6 +34,8 @@ Ejecutar en desarrollo:
 """
 import logging
 import re
+import threading
+import time
 from datetime import date, timedelta
 
 from fastapi import FastAPI, File, Form, Request, Response, UploadFile, status
@@ -56,6 +61,10 @@ from app.whatsapp_client import download_media, get_media_url, send_image, send_
 
 app = FastAPI(title="Aurora - Compensar / Widex Colombia S.A.S.")
 logger = logging.getLogger("dashboard")
+
+# Recordatorio automático de documentos pendientes — ver _tarea_recordatorios más abajo.
+HORAS_RECORDATORIO_DOCUMENTOS = 5
+INTERVALO_RECORDATORIOS_SEGUNDOS = 30 * 60  # revisa cada 30 minutos
 
 # ---------------------------------------------------------------------------
 # Mensajes de "Mantenimiento" y "Entrega Compensar" (trámites 6 y 7) — viven aquí en
@@ -440,10 +449,12 @@ def _manejar_imagen(phone: str, solicitud, contenido: bytes, content_type: str) 
         nota_ia=clasificacion.nota,
     )
 
-    if clasificacion.tipo == "orden_clinica" and clasificacion.vigente is False:
+    # La orden clínica NO vence (se valida por contenido — ver vision_client.py), así
+    # que solo la autorización de servicio puede tumbar la solicitud a 'orden_vencida'.
+    if clasificacion.tipo == "autorizacion_servicio" and clasificacion.vigente is False:
         solicitudes.actualizar_estado(solicitud.id, "orden_vencida")
-        _responder(phone, mensajes.orden_vencida())
-        return {"status": "orden_vencida"}
+        _responder(phone, mensajes.autorizacion_vencida())
+        return {"status": "autorizacion_vencida"}
 
     recibidos = documentos.tipos_recibidos(solicitud.id)
     requeridos = set(solicitudes.DOCUMENTOS_REQUERIDOS[solicitud.requiere_autorizacion])
@@ -454,10 +465,13 @@ def _manejar_imagen(phone: str, solicitud, contenido: bytes, content_type: str) 
         _responder(phone, mensajes.documento_recibido_faltan(sorted(faltantes)))
         return {"status": "documento_recibido"}
 
-    if documentos.ultima_orden_vigente(solicitud.id) is False:
+    # Solo los trámites que de verdad piden autorización de servicio (requiere_autorizacion)
+    # tienen una que revisar aquí — los demás (ej. Prueba de Audífono) solo piden orden
+    # clínica, que no vence, así que no hay nada más que validar por fecha.
+    if solicitud.requiere_autorizacion and documentos.ultima_autorizacion_vigente(solicitud.id) is False:
         solicitudes.actualizar_estado(solicitud.id, "orden_vencida")
-        _responder(phone, mensajes.orden_vencida())
-        return {"status": "orden_vencida"}
+        _responder(phone, mensajes.autorizacion_vencida())
+        return {"status": "autorizacion_vencida"}
 
     solicitudes.actualizar_estado(solicitud.id, "documentos_completos")
     _responder(phone, mensajes.documentos_completos(nombre_servicio))
@@ -476,6 +490,51 @@ def _sincronizar_backlog_si_aplica(solicitud) -> None:
     if paciente is None:
         return
     registro.registrar(cedula=paciente.cedula, nombre=paciente.nombre, sede="", resultado="interesado")
+
+
+# ---------------------------------------------------------------------------
+# Recordatorio automático: si una solicitud se queda en 'pendiente_documentos' sin
+# ninguna novedad por más de HORAS_RECORDATORIO_DOCUMENTOS, le mandamos un recordatorio
+# al paciente — una sola vez por solicitud (ver solicitudes.marcar_recordatorio_enviado).
+# Corre en un hilo aparte, revisando cada INTERVALO_RECORDATORIOS_SEGUNDOS, mientras dure
+# el proceso — no necesita ningún cron externo ni servicio aparte en Railway.
+#
+# Ojo si en algún momento el servicio corre con más de un worker/réplica: cada uno
+# lanzaría su propio hilo y, en teoría, dos podrían revisar casi al mismo tiempo y mandar
+# el recordatorio duplicado antes de que cualquiera alcance a marcarlo como enviado. Hoy
+# corre con un solo proceso, así que no es un problema — si eso cambia, avisar para
+# pasar esto a un lock o a un cron externo.
+# ---------------------------------------------------------------------------
+
+def _tarea_recordatorios() -> None:
+    while True:
+        try:
+            pendientes = solicitudes.pendientes_para_recordatorio(horas=HORAS_RECORDATORIO_DOCUMENTOS, limit=100)
+            for s in pendientes:
+                try:
+                    faltantes = sorted(
+                        set(solicitudes.DOCUMENTOS_REQUERIDOS[s.requiere_autorizacion]) - documentos.tipos_recibidos(s.id)
+                    )
+                    if not faltantes:
+                        # Ya no falta nada (se resolvió por otro lado, ej. un agente) —
+                        # no tiene sentido mandar un recordatorio de documentos.
+                        solicitudes.marcar_recordatorio_enviado(s.id)
+                        continue
+                    nombre_servicio, _ = _datos_servicio(s.servicio)
+                    _responder(s.telefono, mensajes.recordatorio_documentos(nombre_servicio, faltantes))
+                    solicitudes.marcar_recordatorio_enviado(s.id)
+                except Exception:
+                    logger.exception(
+                        "No se pudo mandar el recordatorio de documentos a %r (solicitud %r)", s.telefono, s.id
+                    )
+        except Exception:
+            logger.exception("Falló la revisión de recordatorios de documentos pendientes")
+        time.sleep(INTERVALO_RECORDATORIOS_SEGUNDOS)
+
+
+@app.on_event("startup")
+def _iniciar_tarea_recordatorios() -> None:
+    threading.Thread(target=_tarea_recordatorios, daemon=True).start()
     backlog.update_estado(solicitud.telefono, "requiere_agendamiento")
 
 

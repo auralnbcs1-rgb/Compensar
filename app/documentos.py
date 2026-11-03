@@ -48,14 +48,34 @@ def tipos_recibidos(solicitud_id: int) -> set[str]:
 
 
 def ultima_orden_vigente(solicitud_id: int) -> Optional[bool]:
-    """`vigente` de la orden clínica más reciente registrada para esta solicitud, o
-    None si todavía no hay ninguna (o no se pudo determinar)."""
+    """`vigente` de la orden clínica más reciente registrada para esta solicitud. La
+    orden clínica ya no se valida por fecha (ver vision_client.py) — su `vigente` queda
+    siempre en None, así que esta función en la práctica ya no se usa para decidir nada;
+    se deja por si algún documento viejo todavía tiene un valor guardado de antes."""
     resp = (
         get_client()
         .table("documentos")
         .select("vigente")
         .eq("solicitud_id", solicitud_id)
         .eq("tipo", "orden_clinica")
+        .order("creado_en", desc=True)
+        .limit(1)
+        .execute()
+    )
+    return resp.data[0]["vigente"] if resp.data else None
+
+
+def ultima_autorizacion_vigente(solicitud_id: int) -> Optional[bool]:
+    """`vigente` de la autorización de servicio más reciente registrada para esta
+    solicitud, o None si todavía no hay ninguna (o no se pudo determinar porque el
+    documento no trae impresa la fecha de vencimiento). Es la autorización, no la orden
+    clínica, la que realmente vence — ver vision_client.py."""
+    resp = (
+        get_client()
+        .table("documentos")
+        .select("vigente")
+        .eq("solicitud_id", solicitud_id)
+        .eq("tipo", "autorizacion_servicio")
         .order("creado_en", desc=True)
         .limit(1)
         .execute()

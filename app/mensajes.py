@@ -59,18 +59,33 @@ def documento_recibido_faltan(faltantes: list[str]) -> str:
     return f"Recibido ✅. Todavía me falta: {lista}."
 
 
+def recordatorio_documentos(nombre_servicio: str, faltantes: list[str]) -> str:
+    """Recordatorio automático — lo manda el sistema solo, sin que el paciente escriba
+    nada, cuando pasan varias horas sin ninguna novedad en una solicitud que se quedó
+    en 'pendiente_documentos' (ver _tarea_recordatorios en main.py). Se manda una sola
+    vez por solicitud."""
+    lista = "\n".join(f"- {_NOMBRE_DOC[t]}" for t in faltantes)
+    return (
+        f"¡Hola! 👋 Te escribo para recordarte que para continuar con tu trámite de "
+        f"*{nombre_servicio}* todavía me falta que me mandes, en fotos claras:\n{lista}\n\n"
+        "Cuando puedas, aquí te espero 🙂"
+    )
+
+
 def documentos_completos(nombre_servicio: str) -> str:
     return (
         f"¡Listo! Ya tengo todos tus documentos para *{nombre_servicio}*. Un agente de "
         "atención al cliente te va a contactar para confirmar el día y la hora — yo no "
-        f"agendo citas directamente.\n\n{SEDES_HORARIO}"
+        "agendo citas directamente. Podemos demorarnos hasta *48 horas* en responderte, "
+        f"gracias por tu paciencia 🙏\n\n{SEDES_HORARIO}"
     )
 
 
-def orden_vencida() -> str:
+def autorizacion_vencida() -> str:
     return (
-        "Tu *orden clínica* ya no está vigente. ¿Me puedes mandar una más reciente? "
-        "Si no tienes una nueva, un agente humano te va a ayudar."
+        "Tu *autorización de servicio* ya no está vigente. ¿Me puedes mandar una más "
+        "reciente? Si no tienes una nueva, un agente humano te va a ayudar — podemos "
+        "demorarnos hasta *48 horas* en responderte."
     )
 
 
