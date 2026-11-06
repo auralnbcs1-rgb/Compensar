@@ -17,6 +17,7 @@ Junta cuatro cosas en un solo archivo, cada una con su propia hoja:
    rango (sin teléfono ni nombre) y le pedimos que los agrupe por tema.
 """
 import io
+import logging
 from collections import defaultdict
 from dataclasses import dataclass
 from datetime import date, datetime, timezone
@@ -28,6 +29,8 @@ from openpyxl.utils import get_column_letter
 
 from app.config import settings
 from app.solicitudes import NOMBRE_SERVICIO, Solicitud
+
+logger = logging.getLogger(__name__)
 
 _client = Anthropic(api_key=settings.anthropic_api_key)
 
@@ -98,7 +101,12 @@ class TemaPregunta:
 def agrupar_preguntas_frecuentes(mensajes: list[str]) -> list[TemaPregunta]:
     """Le pide a Claude que agrupe los mensajes de los pacientes (ya sin teléfono ni
     nombre) en temas recurrentes, ordenados del más al menos frecuente. Si no hay
-    mensajes en el rango, no llama a la API — devuelve una lista vacía."""
+    mensajes en el rango, no llama a la API — devuelve una lista vacía.
+
+    Si la llamada a la API de Claude falla (sin crédito, caída del servicio, etc.),
+    no debe tumbar el Excel completo — el resto del reporte (resumen, pendientes,
+    gestionados) no depende de esto, así que se registra el error y se devuelve una
+    lista vacía; la hoja de "Preguntas frecuentes" simplemente sale vacía con un aviso."""
     if not mensajes:
         return []
 
@@ -113,24 +121,31 @@ def agrupar_preguntas_frecuentes(mensajes: list[str]) -> list[TemaPregunta]:
 
     texto_mensajes = "\n".join(f"- {m}" for m in muestra)
 
-    response = _client.messages.create(
-        model=settings.anthropic_model,
-        max_tokens=2048,
-        system=(
-            "Vas a recibir mensajes que pacientes le escribieron por WhatsApp a Aurora, "
-            "el asistente de trámites de audífonos de Compensar / Widex Colombia S.A.S. "
-            "Agrúpalos en TEMAS recurrentes — no un tema por mensaje: junta los que "
-            "preguntan lo mismo aunque estén escritos distinto (ej. 'a q hora abren' y "
-            "'cual es el horario' van al mismo tema). Ordena los temas del más "
-            "frecuente al menos frecuente. Ignora saludos sueltos ('hola', 'buenos "
-            "días'), confirmaciones de datos (cédula, nombre, sí/no) y respuestas de "
-            "menú (escribir solo un número) — quédate con preguntas, dudas y quejas "
-            "reales sobre el trámite."
-        ),
-        tools=[AGRUPAR_TEMAS_TOOL],
-        tool_choice={"type": "tool", "name": "agrupar_temas"},
-        messages=[{"role": "user", "content": f"Estos son los mensajes:\n{texto_mensajes}"}],
-    )
+    try:
+        response = _client.messages.create(
+            model=settings.anthropic_model,
+            max_tokens=2048,
+            system=(
+                "Vas a recibir mensajes que pacientes le escribieron por WhatsApp a Aurora, "
+                "el asistente de trámites de audífonos de Compensar / Widex Colombia S.A.S. "
+                "Agrúpalos en TEMAS recurrentes — no un tema por mensaje: junta los que "
+                "preguntan lo mismo aunque estén escritos distinto (ej. 'a q hora abren' y "
+                "'cual es el horario' van al mismo tema). Ordena los temas del más "
+                "frecuente al menos frecuente. Ignora saludos sueltos ('hola', 'buenos "
+                "días'), confirmaciones de datos (cédula, nombre, sí/no) y respuestas de "
+                "menú (escribir solo un número) — quédate con preguntas, dudas y quejas "
+                "reales sobre el trámite."
+            ),
+            tools=[AGRUPAR_TEMAS_TOOL],
+            tool_choice={"type": "tool", "name": "agrupar_temas"},
+            messages=[{"role": "user", "content": f"Estos son los mensajes:\n{texto_mensajes}"}],
+        )
+    except Exception:
+        logger.exception(
+            "No se pudo agrupar las preguntas frecuentes con Claude — se sigue "
+            "generando el resto del Excel sin esa hoja."
+        )
+        return []
 
     for block in response.content:
         if block.type == "tool_use" and block.name == "agrupar_temas":
