@@ -1,39 +1,39 @@
 """
 Formulario web de documentos + panel de gestión.
- 
+
 Rutas públicas (pacientes, sin login):
     GET/POST /documentos            formulario general (cédula, nombre, teléfono, trámite y documentos)
     GET/POST /documentos/{token}    link personal que manda Aurora: ya sabe quién es, solo pide lo que falta
- 
+
 Rutas del panel (agentes, con el mismo login de Supabase que /dashboard):
     GET  /dashboard/documentos                         lista + filtros + conteo por estado
     GET  /dashboard/documentos/{expediente_id}         detalle: datos, documentos, aprobar/rechazar, estado
     POST /dashboard/documentos/{expediente_id}/estado
     POST /dashboard/documentos/doc/{doc_id}/revisar
     GET  /dashboard/documentos/doc/{doc_id}/ver | /descargar
- 
+
 En main.py:  from app.formulario import router as formulario_router
              app.include_router(formulario_router)
 """
 from __future__ import annotations
- 
+
 import html
 import inspect
 import logging
 from datetime import date, datetime, timedelta, timezone
 from urllib.parse import quote, urlencode
- 
+
 from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
- 
+from starlette.concurrency import run_in_threadpool
+
 from app import expedientes as ex
- 
+
 log = logging.getLogger(__name__)
 router = APIRouter()
- 
-COOKIE_SESION = "aurora_dashboard_session"
+
 e = html.escape
- 
+
 # ====================================================================== estilos
 CSS = """
 :root{--navy:#0B2545;--teal:#0E8F86;--teal-l:#E3F4F2;--azul:#1D6FD8;--azul-l:#E6F0FC;--bg:#F4F7FB;
@@ -82,8 +82,8 @@ dl{display:grid;grid-template-columns:auto 1fr;gap:6px 14px;margin:0}dt{color:va
 .muted{color:var(--mut)}.copy{display:flex;gap:6px}.copy input{font-size:13px}
 @media(max-width:820px){.filtros,.grid2{grid-template-columns:1fr}.hide-m{display:none}}
 """
- 
- 
+
+
 def _pagina(titulo: str, cuerpo: str, *, panel: bool = False, usuario: str | None = None) -> HTMLResponse:
     if panel:
         top = f"""<div class="top"><div class="wrap wide nav"><div><b>Aurora · Panel</b>
@@ -97,16 +97,20 @@ def _pagina(titulo: str, cuerpo: str, *, panel: bool = False, usuario: str | Non
     return HTMLResponse(f"""<!doctype html><html lang="es"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1"><title>{e(titulo)}</title>
 <meta name="robots" content="noindex"><style>{CSS}</style></head><body>{top}{cuerpo}</body></html>""")
- 
- 
+
+
 # ====================================================================== auth del panel
 def _usuario(request: Request) -> str | None:
-    token = request.cookies.get(COOKIE_SESION)
+    try:
+        from app.dashboard_auth import COOKIE_NAME
+    except Exception:  # noqa: BLE001
+        COOKIE_NAME = "aurora_dashboard_session"
+    token = request.cookies.get(COOKIE_NAME)
     if not token:
         return None
     try:
         from app.dashboard_auth import validar_token
- 
+
         u = validar_token(token)
     except Exception:  # noqa: BLE001
         log.warning("validar_token falló", exc_info=True)
@@ -118,12 +122,12 @@ def _usuario(request: Request) -> str | None:
     if isinstance(u, dict):
         return u.get("email") or (u.get("user") or {}).get("email") or "agente"
     return getattr(u, "email", None) or getattr(getattr(u, "user", None), "email", None) or "agente"
- 
- 
+
+
 def _al_login() -> RedirectResponse:
     return RedirectResponse("/login", status_code=303)
- 
- 
+
+
 # ====================================================================== lectura de archivos subidos
 async def _leer_archivos(form, campo: str) -> tuple[list[tuple[bytes, str, str]], str | None]:
     """Devuelve [(contenido, mime, nombre)] de un input file (puede ser múltiple) y un error si lo hay."""
@@ -143,50 +147,73 @@ async def _leer_archivos(form, campo: str) -> tuple[list[tuple[bytes, str, str]]
             return [], f"«{f.filename}» pesa más de 10 MB. Toma la foto de nuevo o comprime el PDF."
         out.append((contenido, mime, f.filename))
     return out, None
- 
- 
-def _validar_fecha_orden(valor: str | None) -> tuple[str | None, str | None]:
-    if not valor:
-        return None, "Escribe la fecha de expedición que aparece en tu orden clínica."
-    try:
-        d = date.fromisoformat(valor)
-    except ValueError:
-        return None, "La fecha de expedición de la orden no es válida."
-    if d > date.today():
-        return None, "La fecha de expedición de la orden no puede ser futura."
-    return d.isoformat(), None
- 
- 
-async def _recolectar(form, tipos: list[str]) -> tuple[dict, str | None, str | None]:
-    """Lee y valida los archivos de cada tipo. Devuelve (lotes, fecha_orden, error)."""
+
+
+async def _recolectar(form, tipos: list[str]) -> tuple[dict, str | None]:
+    """Lee y valida los archivos de cada tipo. Devuelve (lotes, error)."""
     lotes = {}
     for t in tipos + ["otro"]:
         archivos, err = await _leer_archivos(form, f"doc_{t}")
         if err:
-            return {}, None, err
+            return {}, err
         if archivos:
             lotes[t] = archivos
-    fecha_orden = None
-    if "orden_clinica" in lotes:
-        fecha_orden, err = _validar_fecha_orden(form.get("fecha_orden"))
-        if err:
-            return {}, None, err
-    return lotes, fecha_orden, None
- 
- 
-def _guardar(exp: dict, lotes: dict, fecha_orden: str | None) -> int:
+    return lotes, None
+
+
+def _revisar_con_aurora(contenido: bytes, mime: str, nombre_servicio: str):
+    """La misma revisión que hace Aurora con las imágenes de WhatsApp (vision_client.clasificar):
+    qué documento es, la fecha impresa y si la autorización sigue vigente. Devuelve None si no
+    se pudo revisar (PDF, o vision no respondió) — en ese caso queda para revisión de un agente."""
+    if not mime.startswith("image/"):
+        return None
+    try:
+        from app.vision_client import clasificar
+
+        return clasificar(contenido, mime, nombre_servicio)
+    except Exception:  # noqa: BLE001
+        log.warning("vision no pudo revisar un documento del formulario", exc_info=True)
+        return None
+
+
+def _guardar_uno(exp: dict, tipo_slot: str, contenido: bytes, mime: str, nombre: str) -> None:
+    servicio = ex.TRAMITES[exp["tramite"]]["nombre"]
+    rev = _revisar_con_aurora(contenido, mime, servicio)
+    tipo, estado, revisado_por, motivo = tipo_slot, "pendiente", None, None
+    fecha = vigente = nota = None
+    if rev is not None:
+        nota = getattr(rev, "nota", None)
+        if rev.tipo == "sin_clasificar":
+            nota = nota or "Aurora no reconoció el documento — revisar a mano."
+        else:
+            if rev.tipo in ex.DOCS and rev.tipo != tipo_slot and tipo_slot != "otro":
+                nota = f"El paciente lo subió como {ex.DOCS[tipo_slot]['nombre']}. " + (nota or "")
+            tipo = rev.tipo if rev.tipo in ex.DOCS else tipo_slot  # manda lo que leyó Aurora
+            fecha = getattr(rev, "fecha_expedicion", None)
+            vigente = getattr(rev, "vigente", None)
+            estado, revisado_por = "aprobado", "Aurora"
+            if tipo == "autorizacion_servicio" and vigente is False:
+                estado = "rechazado"
+                motivo = "La autorización de servicio está vencida. Solicita una nueva a Compensar."
+    path = ex.subir_archivo(exp["id"], tipo, contenido, mime)
+    doc = ex.agregar_documento(
+        exp["id"], tipo=tipo, canal="formulario", storage_path=path, nombre_archivo=nombre, mime=mime,
+        tamano=len(contenido), fecha_detectada=str(fecha) if fecha else None, vigente=vigente, nota_ia=nota,
+        estado_revision=estado, revisado_por=revisado_por,
+    )
+    if motivo:
+        ex.sb().table("expediente_docs").update({"motivo_rechazo": motivo}).eq("id", doc["id"]).execute()
+
+
+async def _guardar(exp: dict, lotes: dict) -> int:
     n = 0
     for t, archivos in lotes.items():
         for contenido, mime, nombre in archivos:
-            path = ex.subir_archivo(exp["id"], t, contenido, mime)
-            ex.agregar_documento(
-                exp["id"], tipo=t, canal="formulario", storage_path=path, nombre_archivo=nombre,
-                mime=mime, tamano=len(contenido), fecha_expedicion=fecha_orden if t == "orden_clinica" else None,
-            )
+            await run_in_threadpool(_guardar_uno, exp, t, contenido, mime, nombre)
             n += 1
     return n
- 
- 
+
+
 # ====================================================================== formulario público
 def _slot(tipo: str, *, requerido_en: list[str] | None = None, estado: str | None = None, motivo: str | None = None) -> str:
     info = ex.DOCS[tipo]
@@ -202,18 +229,14 @@ def _slot(tipo: str, *, requerido_en: list[str] | None = None, estado: str | Non
     elif estado == "falta":
         marca = '<span class="tag t-warn">Falta</span>'
     extra = ""
-    if tipo == "orden_clinica":
-        extra = """<label for="fecha_orden" style="font-size:14px">Fecha de expedición de la orden</label>
-<input type="date" id="fecha_orden" name="fecha_orden" max="%s">
-<div class="hint">Está impresa en la orden. Sirve para confirmar que sigue vigente.</div>""" % date.today().isoformat()
     motivo_html = f'<div class="hint" style="color:var(--err)">Motivo: {e(motivo)}</div>' if motivo else ""
     titulo = "¿Algún otro documento? (opcional)" if tipo == "otro" else info["nombre"]
     return f"""<div class="slot"{data}><div style="display:flex;justify-content:space-between;gap:8px;align-items:center">
 <h3>{e(titulo)}</h3>{marca}</div><div class="hint">{e(info['ayuda'])}</div>{motivo_html}
 <input type="file" name="doc_{tipo}" accept="image/jpeg,image/png,image/webp,application/pdf"{multiple} style="margin-top:8px">
 {extra}</div>"""
- 
- 
+
+
 def _form_publico(valores: dict | None = None, error: str | None = None) -> HTMLResponse:
     v = {k: e(str(x)) for k, x in (valores or {}).items()}
     opciones = "".join(
@@ -222,11 +245,12 @@ def _form_publico(valores: dict | None = None, error: str | None = None) -> HTML
     )
     slots = "".join(
         _slot(t, requerido_en=[k for k, tr in ex.TRAMITES.items() if t in tr["docs"]])
-        for t in ("orden_clinica", "autorizacion", "cedula")
+        for t in ("orden_clinica", "autorizacion_servicio", "cedula")
     ) + _slot("otro", requerido_en=list(ex.TRAMITES))
     err = f'<div class="alert err">{e(error)}</div>' if error else ""
     cuerpo = f"""<div class="wrap"><div class="card"><h1>Envía tus documentos</h1>
-<p class="muted" style="margin-top:0">Llena tus datos, elige el trámite y sube una foto clara de cada documento.
+<p class="muted" style="margin-top:0">Llena tus datos, elige el trámite y sube una foto clara y completa de cada documento —
+Aurora la revisa al instante.
 Un agente de atención al cliente te contactará para confirmar el día y la hora de tu cita.</p>
 {err}<form method="post" enctype="multipart/form-data" id="f">
 <label for="cedula">Número de cédula</label><input type="text" inputmode="numeric" id="cedula" name="cedula" required value="{v.get('cedula','')}">
@@ -249,13 +273,13 @@ sel.addEventListener('change',upd);upd();
 document.getElementById('f').addEventListener('submit',ev=>{{const b=ev.target.querySelector('button');b.disabled=true;b.textContent='Enviando…';}});
 </script>"""
     return _pagina("Envío de documentos", cuerpo)
- 
- 
+
+
 @router.get("/documentos", response_class=HTMLResponse)
 async def formulario_publico():
     return _form_publico()
- 
- 
+
+
 @router.post("/documentos", response_class=HTMLResponse)
 async def enviar_publico(request: Request):
     form = await request.form()
@@ -278,9 +302,9 @@ async def enviar_publico(request: Request):
         error = "Debes autorizar el tratamiento de datos para continuar."
     if error:
         return _form_publico(valores, error)
- 
+
     # Se valida todo antes de crear el expediente, para no dejar expedientes vacíos.
-    lotes, fecha_orden, err = await _recolectar(form, ex.TRAMITES[tramite]["docs"])
+    lotes, err = await _recolectar(form, ex.TRAMITES[tramite]["docs"])
     if err:
         return _form_publico(valores, err)
     if not lotes:
@@ -289,10 +313,10 @@ async def enviar_publico(request: Request):
         tramite=tramite, origen="formulario", telefono=telefono, cedula=cedula,
         nombre=valores["nombre"].strip(), correo=valores["correo"].strip() or None,
     )
-    _guardar(exp, lotes, fecha_orden)
+    await _guardar(exp, lotes)
     return RedirectResponse(f"/documentos/{exp['token']}?ok=1", status_code=303)
- 
- 
+
+
 # ====================================================================== link personal
 def _pagina_personal(exp: dict, *, ok: bool = False, error: str | None = None) -> HTMLResponse:
     tramite = ex.TRAMITES[exp["tramite"]]
@@ -319,7 +343,7 @@ def _pagina_personal(exp: dict, *, ok: bool = False, error: str | None = None) -
     if exp["estado"] == "documentos_completos":
         avisos += '<div class="alert ok">Tus documentos están completos. Un agente te contactará para confirmar el día y la hora de tu cita.</div>'
     elif exp["estado"] == "orden_vencida":
-        avisos += f'<div class="alert err">Tu orden clínica tiene más de {ex.ORDEN_VIGENCIA_DIAS} días. Sube una orden vigente.</div>'
+        avisos += '<div class="alert err">Tu autorización de servicio está vencida. Solicita una nueva a Compensar y envíala aquí.</div>'
     elif exp["estado"] == "agendado":
         avisos += '<div class="alert info">Tu cita ya fue agendada. Si necesitas algo más, escríbenos por WhatsApp.</div>'
     elif pendientes:
@@ -332,39 +356,39 @@ Guárdalo: puedes volver a entrar para ver cómo va o enviar lo que falte.</p>
 <p class="muted" style="text-align:center;font-size:13px">Sedes: Usaquén y Javeriana · Lunes a jueves 7:30am–5:00pm · Viernes 7:30am–4:30pm</p></div>
 <script>document.getElementById('f').addEventListener('submit',ev=>{{const b=ev.target.querySelector('button');b.disabled=true;b.textContent='Enviando…';}});</script>"""
     return _pagina("Tus documentos", cuerpo)
- 
- 
+
+
 def _no_encontrado() -> HTMLResponse:
     r = _pagina("Link no válido", """<div class="wrap"><div class="card"><h1>Este link no es válido</h1>
 <p>Puede que esté incompleto. Pídele a Aurora por WhatsApp un link nuevo, o
 <a href="/documentos">envía tus documentos aquí</a>.</p></div></div>""")
     r.status_code = 404
     return r
- 
- 
+
+
 @router.get("/documentos/{token}", response_class=HTMLResponse)
 async def formulario_personal(token: str, ok: int = 0):
     exp = ex.obtener_por_token(token)
     if not exp:
         return _no_encontrado()
     return _pagina_personal(exp, ok=bool(ok))
- 
- 
+
+
 @router.post("/documentos/{token}", response_class=HTMLResponse)
 async def enviar_personal(token: str, request: Request):
     exp = ex.obtener_por_token(token)
     if not exp:
         return _no_encontrado()
     form = await request.form()
-    lotes, fecha_orden, err = await _recolectar(form, ex.TRAMITES[exp["tramite"]]["docs"])
+    lotes, err = await _recolectar(form, ex.TRAMITES[exp["tramite"]]["docs"])
     if err:
         return _pagina_personal(exp, error=err)
     if not lotes:
         return _pagina_personal(exp, error="No adjuntaste ningún archivo.")
-    _guardar(exp, lotes, fecha_orden)
+    await _guardar(exp, lotes)
     return RedirectResponse(f"/documentos/{token}?ok=1", status_code=303)
- 
- 
+
+
 # ====================================================================== panel
 def _tag_estado(estado: str) -> str:
     clase = {
@@ -372,18 +396,18 @@ def _tag_estado(estado: str) -> str:
         "orden_vencida": "t-err", "requiere_humano": "t-err", "agendado": "t-ok",
     }.get(estado, "t-mut")
     return f'<span class="tag {clase}">{e(ex.ESTADOS.get(estado, estado))}</span>'
- 
- 
+
+
 def _tag_rev(estado: str) -> str:
     return {
         "aprobado": '<span class="tag t-ok">Aprobado</span>',
         "rechazado": '<span class="tag t-err">Rechazado</span>',
     }.get(estado, '<span class="tag t-info">Por revisar</span>')
- 
- 
+
+
 _BOGOTA = timezone(timedelta(hours=-5))
- 
- 
+
+
 def _fecha(iso: str | None) -> str:
     """Fecha y hora en hora de Bogotá (Supabase guarda en UTC)."""
     if not iso:
@@ -395,12 +419,12 @@ def _fecha(iso: str | None) -> str:
         return d.astimezone(_BOGOTA).strftime("%d/%m/%Y %I:%M %p").lower()
     except ValueError:
         return iso
- 
- 
+
+
 def _dia(iso: str | None) -> str:
     return f"{iso[8:10]}/{iso[5:7]}/{iso[0:4]}" if iso and len(iso) >= 10 else (iso or "")
- 
- 
+
+
 @router.get("/dashboard/documentos", response_class=HTMLResponse)
 async def panel_lista(request: Request, q: str = "", tramite: str = "", estado: str = "", desde: str = "", hasta: str = ""):
     usuario = _usuario(request)
@@ -458,8 +482,8 @@ async def panel_lista(request: Request, q: str = "", tramite: str = "", estado: 
 <div class="card" style="padding:6px 12px;overflow-x:auto">{tabla}</div>
 <p class="muted" style="font-size:13px">{len(filas)} resultado{'s' if len(filas) != 1 else ''}</p></div>"""
     return _pagina("Documentos · Aurora", cuerpo, panel=True, usuario=usuario)
- 
- 
+
+
 @router.get("/dashboard/documentos/{expediente_id}", response_class=HTMLResponse)
 async def panel_detalle(expediente_id: str, request: Request, msg: str = ""):
     usuario = _usuario(request)
@@ -484,13 +508,16 @@ async def panel_detalle(expediente_id: str, request: Request, msg: str = ""):
         else:
             prev = f'<a href="{ver}" target="_blank" style="text-decoration:none;font-weight:600">📄 Abrir PDF</a>'
         extra = ""
-        if d["tipo"] == "orden_clinica":
-            vig = ex.orden_vigente(d.get("fecha_expedicion"))
-            if d.get("fecha_expedicion"):
-                extra = f'<div style="font-size:13px">Expedida: {_dia(d["fecha_expedicion"])} · ' + (
-                    '<span class="tag t-ok">Vigente</span>' if vig else '<span class="tag t-err">Vencida</span>') + "</div>"
-            else:
-                extra = '<div style="font-size:13px"><span class="tag t-warn">Sin fecha — revisar a mano</span></div>'
+        if d.get("fecha_detectada"):
+            extra += f'<div style="font-size:13px">Fecha leída: {e(str(d["fecha_detectada"]))}</div>'
+        if d["tipo"] == "autorizacion_servicio":
+            vig = d.get("vigente")
+            extra += '<div style="font-size:13px">' + (
+                '<span class="tag t-ok">Vigente</span>' if vig is True else
+                '<span class="tag t-err">Vencida</span>' if vig is False else
+                '<span class="tag t-warn">Vigencia sin leer — revisar a mano</span>') + "</div>"
+        if d.get("nota_ia"):
+            extra += f'<div class="muted" style="font-size:12px">Aurora: {e(d["nota_ia"])}</div>'
         motivo = f'<div style="font-size:13px;color:var(--err)">Motivo: {e(d["motivo_rechazo"])}</div>' if d.get("motivo_rechazo") else ""
         rev = f'<div class="muted" style="font-size:12px">Revisado por {e(d["revisado_por"])}</div>' if d.get("revisado_por") else ""
         tarjetas += f"""<div class="doc"><div class="prev">{prev}</div><div class="body">
@@ -528,12 +555,12 @@ async def panel_detalle(expediente_id: str, request: Request, msg: str = ""):
 <form method="post" action="/dashboard/documentos/{exp['id']}/estado"><select name="estado">{op_est}</select>
 <label for="notas" style="font-size:13px">Notas internas</label><textarea id="notas" name="notas" rows="4">{e(exp.get('notas') or '')}</textarea>
 <button class="btn" type="submit" style="margin-top:10px">Guardar</button></form>
-<p class="hint">Faltan documentos / En revisión / Listo para el agente / Orden vencida se actualizan solos al aprobar o rechazar.
+<p class="hint">Faltan documentos / En revisión / Listo para el agente / Autorización vencida se actualizan solos al aprobar o rechazar.
 «Requiere agente» y «Agendado» solo los pones tú y el sistema los respeta.</p></div></div>
 <h2 style="font-size:17px">Documentos ({len(docs)})</h2><div class="docs">{tarjetas}</div></div>"""
     return _pagina(f"{exp.get('nombre') or 'Expediente'} · Documentos", cuerpo, panel=True, usuario=usuario)
- 
- 
+
+
 @router.post("/dashboard/documentos/{expediente_id}/estado")
 async def panel_estado(expediente_id: str, request: Request):
     usuario = _usuario(request)
@@ -547,44 +574,28 @@ async def panel_estado(expediente_id: str, request: Request):
     if estado in ex.ESTADOS_AUTOMATICOS:
         ex.recalcular_estado(expediente_id)
     return RedirectResponse(f"/dashboard/documentos/{expediente_id}?msg=ok", status_code=303)
- 
- 
-async def _avisar_whatsapp(telefono: str, texto: str) -> bool:
+
+
+def _avisar_whatsapp(telefono: str, texto: str, email: str) -> bool:
+    """Manda el texto por WhatsApp y lo deja en el historial del chat, igual que
+    /dashboard/chats/{telefono}/enviar. El 200 OK no garantiza entrega (ventana de 24 h):
+    si falla, el chat lo mostrará como no entregado."""
     try:
-        from app import whatsapp_client as wa
-    except Exception:  # noqa: BLE001
-        return False
-    for nombre in ("send_text", "send_message", "enviar_texto", "enviar_mensaje"):
-        fn = getattr(wa, nombre, None)
-        if not fn:
-            continue
+        from app import conversaciones
+        from app.whatsapp_client import send_text
+
+        respuesta = send_text(telefono, texto)
         try:
-            r = fn(telefono, texto)
-            if inspect.isawaitable(r):
-                r = await r
-            if r is False:
-                return False
-            if isinstance(r, dict) and r.get("error"):
-                return False
-            # Si existe, queda también en el historial del panel de chats.
-            try:
-                from app import conversaciones as conv
-                for reg in ("registrar_mensaje", "guardar_mensaje", "agregar_mensaje"):
-                    g = getattr(conv, reg, None)
-                    if g:
-                        rr = g(telefono, "agente", texto)
-                        if inspect.isawaitable(rr):
-                            await rr
-                        break
-            except Exception:  # noqa: BLE001
-                log.info("No se registró el aviso en el historial del chat", exc_info=True)
-            return True
-        except Exception:  # noqa: BLE001
-            log.warning("No se pudo avisar por WhatsApp a %s", telefono, exc_info=True)
-            return False
-    return False
- 
- 
+            wa_id = respuesta["messages"][0]["id"]
+        except (KeyError, IndexError, TypeError):
+            wa_id = ""
+        conversaciones.registrar_saliente(telefono, "texto", email, contenido=texto, wa_message_id=wa_id)
+        return bool(wa_id)
+    except Exception:  # noqa: BLE001
+        log.warning("No se pudo avisar por WhatsApp a %s", telefono, exc_info=True)
+        return False
+
+
 @router.post("/dashboard/documentos/doc/{doc_id}/revisar")
 async def panel_revisar(doc_id: str, request: Request):
     usuario = _usuario(request)
@@ -603,10 +614,10 @@ async def panel_revisar(doc_id: str, request: Request):
                 f"y necesitamos que lo envíes de nuevo.\nMotivo: {doc.get('motivo_rechazo')}\n\n"
                 f"Puedes enviarlo por aquí o en este link: {ex.public_base_url()}/documentos/{exp['token']}"
             )
-            msg = "avisado" if await _avisar_whatsapp(exp["telefono"], texto) else "noavisado"
+            msg = "avisado" if _avisar_whatsapp(exp["telefono"], texto, usuario) else "noavisado"
     return RedirectResponse(f"/dashboard/documentos/{doc['expediente_id']}?msg={msg}", status_code=303)
- 
- 
+
+
 @router.get("/dashboard/documentos/doc/{doc_id}/ver")
 async def panel_ver(doc_id: str, request: Request):
     if not _usuario(request):
@@ -614,8 +625,8 @@ async def panel_ver(doc_id: str, request: Request):
     doc = ex.obtener_documento(doc_id)
     url = ex.url_firmada(doc["storage_path"]) if doc else None
     return RedirectResponse(url, status_code=302) if url else HTMLResponse("No disponible", status_code=404)
- 
- 
+
+
 @router.get("/dashboard/documentos/doc/{doc_id}/descargar")
 async def panel_descargar(doc_id: str, request: Request):
     if not _usuario(request):
@@ -628,4 +639,3 @@ async def panel_descargar(doc_id: str, request: Request):
     nombre = f"{doc['tipo']}_{exp.get('cedula') or exp.get('telefono') or 'paciente'}_{doc['id'][:6]}.{ext}"
     url = ex.url_firmada(doc["storage_path"], descargar=nombre)
     return RedirectResponse(url, status_code=302) if url else HTMLResponse("No disponible", status_code=404)
- 
