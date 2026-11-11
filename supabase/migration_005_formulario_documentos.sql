@@ -32,13 +32,15 @@ create index if not exists expedientes_creado_idx   on expedientes (creado_en de
 create table if not exists expediente_docs (
     id               uuid primary key default gen_random_uuid(),
     expediente_id    uuid not null references expedientes(id) on delete cascade,
-    tipo             text not null,      -- orden_clinica | autorizacion | cedula | otro
+    tipo             text not null,      -- orden_clinica | autorizacion_servicio | cedula | otro
     canal            text not null,      -- formulario | whatsapp
     storage_path     text not null,      -- ruta dentro del bucket documentos-pacientes
     nombre_archivo   text,
     mime             text,
     tamano           integer,
-    fecha_expedicion date,               -- solo orden clínica
+    fecha_detectada  text,               -- fecha que leyó vision en el documento
+    vigente          boolean,            -- autorización: false si vision la ve vencida; null = sin leer
+    nota_ia          text,               -- observación de vision (igual que en documentos)
     estado_revision  text not null default 'pendiente',  -- pendiente | aprobado | rechazado
     motivo_rechazo   text,
     revisado_por     text,
@@ -52,3 +54,8 @@ create index if not exists expediente_docs_exp_idx on expediente_docs (expedient
 -- nadie con la anon key puede leerlas ni escribirlas.
 alter table expedientes     enable row level security;
 alter table expediente_docs enable row level security;
+
+-- Si ya habías corrido una versión anterior de este archivo, estas líneas la actualizan.
+alter table expediente_docs add column if not exists fecha_detectada text;
+alter table expediente_docs add column if not exists vigente boolean;
+alter table expediente_docs add column if not exists nota_ia text;
